@@ -13,7 +13,7 @@ from sentence_transformers import SentenceTransformer
 
 from .base import BaseBackend, EmbeddingResult
 from ..utils.device import get_optimal_torch_device
-from ..utils.logging import setup_logging
+from ..utils.logger import setup_logging
 
 logger = setup_logging()
 
