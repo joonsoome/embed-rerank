@@ -145,10 +145,10 @@ Response:
 
 ```mermaid
 graph TD
-    A[Client] -->|REST API| B[FastAPI Server]
-    B -->|/embed| C[Embedding Model (MLX/MPS)]
-    B -->|/rerank| C
-    B -->|optional| D[Cross-Encoder Reranker]
+  A["Client"] -->|"REST API"| B["FastAPI Server"]
+  B -->|"/embed"| C["Embedding Model (MLX / MPS)"]
+  B -->|"/rerank"| C
+  B -->|"optional"| D["Cross-Encoder Reranker"]
 ```
 
 ---
