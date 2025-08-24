@@ -3,12 +3,32 @@ Reranking router for document reranking operations.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from typing import List
+from datetime import datetime
+import json
 
 from ..models.requests import RerankRequest
 from ..models.responses import RerankResponse, ErrorResponse
 from ..services.reranking_service import RerankingService
 from ..backends.base import BackendManager
+
+def json_encoder(obj):
+    """Custom JSON encoder for datetime objects."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def filter_none_values(data):
+    """Recursively filter None values from a dictionary."""
+    if isinstance(data, dict):
+        return {k: filter_none_values(v) for k, v in data.items() if v is not None}
+    elif isinstance(data, list):
+        return [filter_none_values(item) for item in data]
+    else:
+        return data
+
 
 router = APIRouter(
     prefix="/api/v1/rerank",
@@ -44,7 +64,7 @@ async def get_reranking_service(manager: BackendManager = Depends(get_backend_ma
     return RerankingService(manager)
 
 
-@router.post("/", response_model=RerankResponse)
+@router.post("/")
 async def rerank_passages(request: RerankRequest, service: RerankingService = Depends(get_reranking_service)):
     """
     Rerank passages based on relevance to the query.
@@ -63,7 +83,13 @@ async def rerank_passages(request: RerankRequest, service: RerankingService = De
         # Perform reranking using the service
         response = await service.rerank_passages(request)
 
-        return response
+                # Convert to dict and filter None values
+        response_dict = response.model_dump()
+        filtered_response = filter_none_values(response_dict)
+        
+        # Create JSON with custom encoder for datetime
+        json_content = json.dumps(filtered_response, default=json_encoder)
+        return JSONResponse(content=json.loads(json_content))
 
     except ValueError as e:
         # Input validation errors

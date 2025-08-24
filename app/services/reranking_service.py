@@ -188,7 +188,10 @@ class RerankingService:
         # Create RerankResult objects
         results = []
         for score, original_idx, passage in top_results:
-            result = RerankResult(text=passage if return_documents else "", score=float(score), index=original_idx)
+            if return_documents:
+                result = RerankResult(text=passage, score=float(score), index=original_idx)
+            else:
+                result = RerankResult(score=float(score), index=original_idx)
             results.append(result)
 
         return results

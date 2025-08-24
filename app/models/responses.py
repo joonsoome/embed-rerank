@@ -48,8 +48,8 @@ class EmbedResponse(BaseModel):
 class RerankResult(BaseModel):
     """Individual rerank result."""
 
-    text: str = Field(
-        ..., description="Original passage text", example="Machine learning is a subset of artificial intelligence."
+    text: Optional[str] = Field(
+        None, description="Original passage text", example="Machine learning is a subset of artificial intelligence."
     )
     score: float = Field(
         ...,
