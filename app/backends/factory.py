@@ -89,7 +89,7 @@ class BackendFactory:
             raise ValueError(
                 "MLX backend requested but MLX is not available. "
                 "MLX requires macOS with Apple Silicon. "
-                "Install with: pip install mlx>=0.4.0 mlx-lm>=0.2.0"
+                "Install with: pip install mlx>=0.4.0"
             )
         
         if platform.system() != "Darwin":
@@ -100,13 +100,16 @@ class BackendFactory:
         
         mlx_model_path = kwargs.get("model_path", settings.mlx_model_path)
         
+        # Use MLX-optimized model for MLX backend
+        mlx_model_name = "mlx-community/Qwen3-Embedding-4B-4bit-DWQ"
+        
         logger.info(
             "Creating MLX backend",
-            model_name=model_name,
+            model_name=mlx_model_name,
             model_path=mlx_model_path
         )
         
-        return MLXBackend(model_name, model_path=mlx_model_path)
+        return MLXBackend(mlx_model_name, model_path=mlx_model_path)
     
     @staticmethod
     def _create_torch_backend(model_name: str, **kwargs) -> TorchBackend:
