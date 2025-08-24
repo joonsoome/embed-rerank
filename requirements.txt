@@ -20,6 +20,7 @@ python-dotenv
 # Logging and monitoring
 structlog
 prometheus-client
+psutil>=5.9.0
 
 # Optional MLX dependencies (Apple Silicon only)
 mlx>=0.4.0; sys_platform == "darwin"

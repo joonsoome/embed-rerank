@@ -5,7 +5,7 @@ Configuration management for the embed-rerank API.
 import os
 import platform
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(default="json", description="Log format (json or text)")
+    
+    # FastAPI Configuration
+    allowed_origins: List[str] = Field(default=["*"], description="CORS allowed origins")
+    allowed_hosts: List[str] = Field(default=["*"], description="Trusted host middleware allowed hosts")
+    cors_credentials: bool = Field(default=True, description="Allow CORS credentials")
+    cors_methods: List[str] = Field(default=["GET", "POST", "OPTIONS"], description="Allowed CORS methods")
     
     @validator("backend")
     def validate_backend(cls, v):

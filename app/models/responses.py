@@ -106,8 +106,8 @@ class RerankResult(BaseModel):
     )
     score: float = Field(
         ..., 
-        description="Relevance score (higher is more relevant)",
-        ge=0.0,
+        description="Relevance score (higher is more relevant, can be negative for similarity methods)",
+        ge=-1.0,
         le=1.0,
         example=0.8542
     )
@@ -183,58 +183,47 @@ class HealthResponse(BaseModel):
     
     status: str = Field(
         ..., 
-        description="Service status (healthy/unhealthy/not_loaded)",
+        description="Service status (healthy/unhealthy/not_ready/warning)",
         example="healthy"
-    )
-    backend: str = Field(
-        ..., 
-        description="Active backend",
-        example="mlx"
-    )
-    model_loaded: bool = Field(
-        ..., 
-        description="Whether model is loaded",
-        example=True
-    )
-    model_info: Dict[str, Any] = Field(
-        ..., 
-        description="Model metadata",
-        example={
-            "embedding_model": "all-MiniLM-L6-v2",
-            "reranking_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-            "embedding_dim": 384
-        }
-    )
-    device_info: Dict[str, Any] = Field(
-        ..., 
-        description="Device information",
-        example={
-            "device": "mps",
-            "backend": "mlx",
-            "memory_usage": "2.1GB"
-        }
     )
     uptime: float = Field(
         ..., 
         description="Service uptime in seconds",
         example=3600.5
     )
+    backend: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Backend information",
+        example={
+            "name": "MLXBackend",
+            "status": "healthy",
+            "model_loaded": True,
+            "model_name": "Qwen/Qwen3-Embedding-4B",
+            "device": "mlx",
+            "load_time": 2.5
+        }
+    )
+    system: Optional[Dict[str, Any]] = Field(
+        None,
+        description="System resource information",
+        example={
+            "cpu_percent": 15.2,
+            "memory_percent": 45.8,
+            "memory_available_gb": 8.2,
+            "memory_total_gb": 16.0
+        }
+    )
+    performance: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Performance metrics",
+        example={
+            "test_embedding_time": 0.045,
+            "embedding_dimension": 384
+        }
+    )
     timestamp: datetime = Field(
         default_factory=datetime.now,
         description="Health check timestamp"
-    )
-    version: str = Field(
-        ...,
-        description="API version",
-        example="1.0.0"
-    )
-    backends: Dict[str, bool] = Field(
-        ...,
-        description="Backend availability status",
-        example={
-            "torch": True,
-            "mlx": True
-        }
     )
     
     class Config:

@@ -1,0 +1,175 @@
+"""
+Reranking router for document reranking operations.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from typing import List
+
+from ..models.requests import RerankRequest
+from ..models.responses import RerankResponse, ErrorResponse
+from ..services.reranking_service import RerankingService
+from ..backends.base import BackendManager
+
+router = APIRouter(
+    prefix="/api/v1/rerank",
+    tags=["reranking"],
+    responses={
+        503: {"model": ErrorResponse, "description": "Service Unavailable"},
+        400: {"model": ErrorResponse, "description": "Bad Request"},
+        422: {"model": ErrorResponse, "description": "Validation Error"}
+    }
+)
+
+# This will be set by the main app
+_backend_manager: BackendManager = None
+
+
+def set_backend_manager(manager: BackendManager):
+    """Set the backend manager instance."""
+    global _backend_manager
+    _backend_manager = manager
+
+
+async def get_backend_manager() -> BackendManager:
+    """Dependency to get the backend manager."""
+    if _backend_manager is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Backend manager not initialized"
+        )
+    return _backend_manager
+
+
+async def get_reranking_service(
+    manager: BackendManager = Depends(get_backend_manager)
+) -> RerankingService:
+    """Dependency to get the reranking service."""
+    if not manager.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="Backend not ready. Please wait for model initialization."
+        )
+    return RerankingService(manager)
+
+
+@router.post("/", response_model=RerankResponse)
+async def rerank_passages(
+    request: RerankRequest,
+    service: RerankingService = Depends(get_reranking_service)
+):
+    """
+    Rerank passages based on relevance to the query.
+    
+    Args:
+        request: RerankRequest containing query, passages, and options
+        service: RerankingService dependency
+    
+    Returns:
+        RerankResponse with ranked results and metadata
+    
+    Raises:
+        HTTPException: For various error conditions
+    """
+    try:
+        # Perform reranking using the service
+        response = await service.rerank_passages(request)
+        
+        return response
+    
+    except ValueError as e:
+        # Input validation errors
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid input: {str(e)}"
+        )
+    
+    except RuntimeError as e:
+        # Backend/model errors
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service error: {str(e)}"
+        )
+    
+    except Exception as e:
+        # Unexpected errors
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.post("/batch", response_model=List[RerankResponse])
+async def batch_rerank_passages(
+    requests: List[RerankRequest],
+    service: RerankingService = Depends(get_reranking_service)
+):
+    """
+    Perform batch reranking for multiple queries.
+    
+    Args:
+        requests: List of RerankRequest objects
+        service: RerankingService dependency
+    
+    Returns:
+        List of RerankResponse objects
+    
+    Raises:
+        HTTPException: For various error conditions
+    """
+    try:
+        # Validate batch size
+        if len(requests) > 10:  # Reasonable batch limit
+            raise ValueError("Batch size too large. Maximum 10 requests per batch.")
+        
+        # Process each request
+        responses = []
+        for i, request in enumerate(requests):
+            try:
+                response = await service.rerank_passages(request)
+                responses.append(response)
+            except Exception as e:
+                raise ValueError(f"Error in batch item {i}: {str(e)}")
+        
+        return responses
+    
+    except ValueError as e:
+        # Input validation errors
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid batch input: {str(e)}"
+        )
+    
+    except RuntimeError as e:
+        # Backend/model errors
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service error: {str(e)}"
+        )
+    
+    except Exception as e:
+        # Unexpected errors
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.get("/info")
+async def get_reranking_info(
+    service: RerankingService = Depends(get_reranking_service)
+):
+    """
+    Get information about the reranking service and model.
+    
+    Returns:
+        Dictionary with model information, capabilities, and status
+    """
+    try:
+        info = await service.get_service_info()
+        return info
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get service info: {str(e)}"
+        )

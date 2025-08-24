@@ -166,3 +166,65 @@ class BaseBackend(ABC):
         
         health_status["check_time"] = time.time() - start_time
         return health_status
+
+
+class BackendManager:
+    """Manager for backend instances and operations."""
+    
+    def __init__(self, backend: BaseBackend):
+        """
+        Initialize the backend manager.
+        
+        Args:
+            backend: Backend instance to manage
+        """
+        self.backend = backend
+        self._initialized = False
+    
+    async def initialize(self) -> None:
+        """Initialize the backend by loading the model."""
+        if not self._initialized:
+            await self.backend.load_model()
+            self._initialized = True
+    
+    def get_backend(self) -> BaseBackend:
+        """Get the managed backend instance."""
+        return self.backend
+    
+    def get_current_backend(self) -> BaseBackend:
+        """Alias for get_backend() for backward compatibility."""
+        return self.get_backend()
+    
+    def is_ready(self) -> bool:
+        """Check if the backend is ready for use."""
+        return self._initialized and self.backend.is_loaded
+    
+    def is_available(self) -> bool:
+        """Alias for is_ready() for backward compatibility."""
+        return self.is_ready()
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Perform health check on the managed backend."""
+        if not self._initialized:
+            return {
+                "status": "not_initialized",
+                "backend": self.backend.__class__.__name__
+            }
+        
+        return await self.backend.health_check()
+    
+    def get_current_backend_info(self) -> Dict[str, Any]:
+        """Get information about the current backend."""
+        if not self._initialized:
+            return {"status": "not_initialized"}
+        
+        info = self.backend.get_model_info()
+        device_info = self.backend.get_device_info()
+        
+        return {
+            "name": self.backend.__class__.__name__,
+            "model_name": self.backend.model_name,
+            "device": device_info.get("device", "unknown"),
+            "status": "ready" if self.is_ready() else "initializing",
+            **info
+        }

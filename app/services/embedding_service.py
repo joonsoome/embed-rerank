@@ -133,20 +133,23 @@ class EmbeddingService:
         if backend is None:
             raise ValueError("No backend available")
         
-        # Process in batches if needed
-        all_embeddings = []
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            
-            # Generate embeddings for batch
-            batch_embeddings = await backend.embed_texts(
-                texts=batch_texts,
-                normalize=normalize
-            )
-            
-            all_embeddings.extend(batch_embeddings)
+        # Generate embeddings using backend
+        result = await backend.embed_texts(texts=texts, batch_size=batch_size)
         
-        return all_embeddings
+        # Extract vectors from result
+        embeddings = result.vectors.tolist() if hasattr(result.vectors, 'tolist') else result.vectors
+        
+        # Apply normalization if requested
+        if normalize:
+            import numpy as np
+            embeddings_array = np.array(embeddings)
+            # L2 normalization
+            norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # Avoid division by zero
+            embeddings_array = embeddings_array / norms
+            embeddings = embeddings_array.tolist()
+        
+        return embeddings
     
     def get_service_info(self) -> Dict[str, Any]:
         """

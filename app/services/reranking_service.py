@@ -132,19 +132,19 @@ class RerankingService:
         if not hasattr(backend, 'rerank_passages'):
             # Fallback to embedding-based similarity
             logger.warning("Backend doesn't support reranking, falling back to embedding similarity")
-            return await self._embedding_based_reranking(query, passages)
+            return await self._compute_embedding_similarity(query, passages)
         
         # Use backend's reranking method
         scores = await backend.rerank_passages(query=query, passages=passages)
         return scores
     
-    async def _embedding_based_reranking(
+    async def _compute_embedding_similarity(
         self,
         query: str,
         passages: List[str]
     ) -> List[float]:
         """
-        Fallback reranking using embedding similarity.
+        Compute similarity scores using embeddings.
         
         Args:
             query: Query text
@@ -156,17 +156,22 @@ class RerankingService:
         backend = self.backend_manager.get_current_backend()
         
         # Generate embeddings
-        query_embedding = await backend.embed_texts([query], normalize=True)
-        passage_embeddings = await backend.embed_texts(passages, normalize=True)
+        query_result = await backend.embed_texts([query])
+        passage_result = await backend.embed_texts(passages)
+        
+        # Get vectors and normalize them
+        import numpy as np
+        
+        query_vector = np.array(query_result.vectors[0])
+        query_vector = query_vector / np.linalg.norm(query_vector)
+        
+        passage_vectors = np.array(passage_result.vectors)
+        passage_norms = np.linalg.norm(passage_vectors, axis=1, keepdims=True)
+        passage_norms[passage_norms == 0] = 1  # Avoid division by zero
+        passage_vectors = passage_vectors / passage_norms
         
         # Compute cosine similarities
-        query_emb = query_embedding[0]
-        scores = []
-        
-        for passage_emb in passage_embeddings:
-            # Cosine similarity (embeddings are already normalized)
-            similarity = sum(a * b for a, b in zip(query_emb, passage_emb))
-            scores.append(float(similarity))
+        scores = np.dot(passage_vectors, query_vector).tolist()
         
         return scores
     
