@@ -310,8 +310,6 @@ python -m app.utils.benchmark
 ## 📚 Documentation
 
 - **API Docs**: `http://localhost:9000/docs` (auto-generated)
-- **Implementation Guide**: `README.instructions.md`
-- **Development Status**: `DEVELOPMENT_PLAN.md`
 
 ---
 
