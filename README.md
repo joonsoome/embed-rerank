@@ -46,7 +46,7 @@ A high-performance, MLX-accelerated embedding and reranking service that achieve
 
 ---
 
-## � Quick Start
+## 🪄 Quick Start
 
 ### Installation
 
@@ -279,36 +279,192 @@ pytest tests/test_torch_backend.py -v
 
 ---
 
-## � Deployment
+## 🚀 Deployment
 
-### GitHub-based Deployment (Recommended)
-
-See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for comprehensive deployment instructions including:
-
-- **GitHub Actions CI/CD** setup
-- **Production server configuration**
-- **Nginx reverse proxy** setup
-- **SSL certificate** management
-- **Monitoring and logging**
-- **Security best practices**
-
-### Quick Production Setup
+### Local Development
 
 ```bash
 # Clone and setup
 git clone https://github.com/joonsoo-me/embed-rerank.git
 cd embed-rerank
+
+# Setup Python environment
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configure production environment
+# Run development server
+python -m uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
+```
+
+### Production Deployment
+
+#### Option 1: Direct Server Deployment
+
+```bash
+# Install system dependencies
+sudo apt update && sudo apt install -y python3.11 python3.11-venv nginx
+
+# Setup application
+sudo mkdir -p /opt/embed-rerank
+sudo chown $USER:$USER /opt/embed-rerank
+cd /opt/embed-rerank
+
+# Clone and configure
+git clone https://github.com/joonsoo-me/embed-rerank.git .
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Configure environment
 cp .env.example .env.production
 # Edit .env.production with your settings
 
-# Run with Gunicorn (production)
+# Install Gunicorn and run
 pip install gunicorn
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:9000
+gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker -b 127.0.0.1:9000
+```
+
+#### Option 2: Process Manager (PM2)
+
+```bash
+# Install Node.js and PM2
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pm2
+
+# Create PM2 configuration
+cat > ecosystem.config.js << EOF
+module.exports = {
+  apps: [{
+    name: 'embed-rerank',
+    script: '.venv/bin/uvicorn',
+    args: 'app.main:app --host 0.0.0.0 --port 9000',
+    cwd: '/opt/embed-rerank',
+    instances: 1,
+    autorestart: true,
+    max_memory_restart: '2G',
+    env_file: '.env.production'
+  }]
+}
+EOF
+
+# Start with PM2
+pm2 start ecosystem.config.js
+pm2 startup
+pm2 save
+```
+
+#### Option 3: Systemd Service
+
+```bash
+# Create systemd service file
+sudo tee /etc/systemd/system/embed-rerank.service > /dev/null << EOF
+[Unit]
+Description=Embed-Rerank API Service
+After=network.target
+
+[Service]
+Type=exec
+User=$USER
+Group=$USER
+WorkingDirectory=/opt/embed-rerank
+Environment=PATH=/opt/embed-rerank/.venv/bin
+ExecStart=/opt/embed-rerank/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 9000
+Restart=always
+RestartSec=3
+EnvironmentFile=/opt/embed-rerank/.env.production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start service
+sudo systemctl daemon-reload
+sudo systemctl enable embed-rerank
+sudo systemctl start embed-rerank
+```
+
+### Reverse Proxy (Nginx)
+
+```bash
+# Install SSL certificate (Let's Encrypt)
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
+
+# Configure Nginx
+sudo tee /etc/nginx/sites-available/embed-rerank > /dev/null << EOF
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+    
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    
+    location / {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+# Enable site
+sudo ln -s /etc/nginx/sites-available/embed-rerank /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Environment Configuration
+
+Create `.env.production` with your settings:
+
+```env
+# Backend and Model
+BACKEND=auto
+MODEL_NAME=mlx-community/Qwen3-Embedding-4B-4bit-DWQ
+
+# Server Settings
+HOST=0.0.0.0
+PORT=9000
+RELOAD=false
+
+# Performance
+BATCH_SIZE=32
+MAX_BATCH_SIZE=128
+MAX_TEXTS_PER_REQUEST=100
+MAX_PASSAGES_PER_RERANK=1000
+
+# Security
+ALLOWED_HOSTS=["your-domain.com"]
+ALLOWED_ORIGINS=["https://your-domain.com"]
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+```
+
+### Health Check & Monitoring
+
+```bash
+# Service status
+sudo systemctl status embed-rerank
+
+# Application health
+curl https://your-domain.com/health/ | jq
+
+# View logs
+sudo journalctl -u embed-rerank -f
+
+# Monitor resources
+htop
 ```
 
 ---
