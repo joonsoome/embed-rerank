@@ -144,6 +144,11 @@ This project is built with love for the Apple MLX ecosystem. We believe in:
 - **⚡ Performance**: Making AI as fast as Apple Silicon deserves
 - **🤝 Community**: Sharing knowledge and advancing together
 - **📚 Education**: Learning and teaching MLX best practices
+- **✨ Recommend Links**
+  - [MLX-Community](https://huggingface.co/mlx-community)
+  - [mlx-community/Qwen3-Embedding-8B-4bit-DWQ](https://huggingface.co/mlx-community/Qwen3-Embedding-8B-4bit-DWQ)
+  - [mlx-community/Qwen3-Embedding-4B-4bit-DWQ](https://huggingface.co/mlx-community/Qwen3-Embedding-4B-4bit-DWQ)
+  - [mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ](https://huggingface.co/mlx-community/Qwen3-Embedding-0.6B-8bit)
 
 **Star this repo** if Apple MLX + AI performance excites you!
 
