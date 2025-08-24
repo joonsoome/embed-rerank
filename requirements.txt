@@ -1,24 +1,36 @@
+# Core FastAPI dependencies
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+
+# Pydantic for data validation
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+
+# ML/AI dependencies
 torch>=2.0.0
 sentence-transformers>=2.2.0
 transformers>=4.30.0
 numpy>=1.24.0
+
+# HTTP and API utilities
 httpx>=0.25.0
 python-multipart
 python-dotenv
+
+# Logging and monitoring
 structlog
 prometheus-client
 
-# Optional MLX dependencies (install conditionally on macOS)
+# Optional MLX dependencies (Apple Silicon only)
 mlx>=0.4.0; sys_platform == "darwin"
 mlx-lm>=0.2.0; sys_platform == "darwin"
 
-# Development dependencies
+# Development and testing dependencies
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
 black>=23.0.0
 flake8>=6.0.0
 mypy>=1.5.0
+
+# Updated 2주차: Added pydantic-settings for BaseSettings compatibility
+# Updated 2주차: MLX dependencies for Apple Silicon optimization

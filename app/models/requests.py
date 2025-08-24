@@ -13,13 +13,20 @@ class EmbedRequest(BaseModel):
         ..., 
         description="List of texts to embed",
         min_items=1,
-        max_items=100
+        max_items=100,
+        example=["Hello world", "How are you?", "FastAPI is awesome"]
     )
     batch_size: Optional[int] = Field(
         32,
         description="Batch size for processing",
         ge=1,
-        le=128
+        le=128,
+        example=32
+    )
+    normalize: Optional[bool] = Field(
+        True,
+        description="Whether to normalize embeddings to unit length",
+        example=True
     )
     
     @validator('texts')
@@ -39,43 +46,66 @@ class EmbedRequest(BaseModel):
                 raise ValueError(f"Text at index {i} too long: {len(text)} > 8192 characters")
         
         return v
+    
+    @validator('batch_size')
+    def validate_batch_size(cls, v, values):
+        """Validate batch size relative to number of texts."""
+        if 'texts' in values and values['texts']:
+            num_texts = len(values['texts'])
+            if v > num_texts:
+                # Adjust batch size to not exceed number of texts
+                return num_texts
+        return v
 
 
 class RerankRequest(BaseModel):
-    """Request model for document reranking."""
+    """Request model for reranking query-passage pairs."""
     
     query: str = Field(
         ...,
-        description="Query text for reranking",
+        description="Query text to rank passages against",
         min_length=1,
-        max_length=8192
+        max_length=2048,
+        example="What is machine learning?"
     )
     passages: List[str] = Field(
         ...,
         description="List of passages to rerank",
         min_items=1,
-        max_items=1000
+        max_items=1000,
+        example=[
+            "Machine learning is a subset of artificial intelligence.",
+            "Deep learning uses neural networks with many layers.",
+            "Natural language processing helps computers understand text."
+        ]
     )
     top_k: Optional[int] = Field(
-        None,
-        description="Number of top results to return",
-        ge=1
+        10,
+        description="Number of top-ranked passages to return",
+        ge=1,
+        le=100,
+        example=5
     )
-    use_cross_encoder: Optional[bool] = Field(
-        False,
-        description="Use cross-encoder for reranking"
+    return_documents: Optional[bool] = Field(
+        True,
+        description="Whether to return the original passage texts",
+        example=True
     )
     
     @validator('query')
     def validate_query(cls, v):
         """Validate query text."""
+        if not isinstance(v, str):
+            raise ValueError("Query must be a string")
+        
         if not v.strip():
             raise ValueError("Query cannot be empty or whitespace only")
+        
         return v.strip()
     
     @validator('passages')
     def validate_passages(cls, v):
-        """Validate passage texts."""
+        """Validate passage inputs."""
         if not v:
             raise ValueError("passages cannot be empty")
         
@@ -86,15 +116,17 @@ class RerankRequest(BaseModel):
             if not passage.strip():
                 raise ValueError(f"Passage at index {i} cannot be empty or whitespace only")
             
-            if len(passage) > 8192:  # Reasonable character limit
-                raise ValueError(f"Passage at index {i} too long: {len(passage)} > 8192 characters")
+            if len(passage) > 4096:  # Reasonable character limit for passages
+                raise ValueError(f"Passage at index {i} too long: {len(passage)} > 4096 characters")
         
         return v
     
     @validator('top_k')
     def validate_top_k(cls, v, values):
-        """Validate top_k parameter."""
-        if v is not None and 'passages' in values:
-            if v > len(values['passages']):
-                raise ValueError(f"top_k ({v}) cannot be greater than number of passages ({len(values['passages'])})")
+        """Validate top_k relative to number of passages."""
+        if 'passages' in values and values['passages']:
+            num_passages = len(values['passages'])
+            if v > num_passages:
+                # Adjust top_k to not exceed number of passages
+                return num_passages
         return v
