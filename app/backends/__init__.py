@@ -7,10 +7,10 @@ from .factory import BackendFactory
 
 __all__ = [
     "BaseBackend",
-    "EmbeddingResult", 
+    "EmbeddingResult",
     "RerankResult",
     "TorchBackend",
     "MLXBackend",
     "MLX_AVAILABLE",
-    "BackendFactory"
+    "BackendFactory",
 ]

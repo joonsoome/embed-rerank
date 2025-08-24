@@ -1,0 +1,37 @@
+# Development Dependencies for Embed-Rerank API
+# Testing Framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+httpx>=0.25.0
+
+# Code Quality Tools
+black>=23.7.0
+flake8>=6.0.0
+mypy>=1.5.0
+isort>=5.12.0
+
+# Type Stubs
+types-requests>=2.31.0
+
+# Pre-commit Hooks
+pre-commit>=3.3.0
+
+# Load Testing
+locust>=2.16.0
+
+# Development Server
+watchdog>=3.0.0
+
+# Documentation
+mkdocs>=1.5.0
+mkdocs-material>=9.2.0
+
+# Performance Profiling
+memory-profiler>=0.61.0
+line-profiler>=4.1.0
+
+# Development Utilities
+ipython>=8.14.0
+jupyter>=1.0.0

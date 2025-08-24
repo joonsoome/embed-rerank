@@ -30,45 +30,42 @@ startup_time = None
 async def lifespan(app: FastAPI):
     """Application lifespan management with backend initialization."""
     global backend_manager, startup_time
-    
+
     startup_time = time.time()
     logger.info("Starting application initialization")
-    
+
     try:
         # Create backend using factory
-        backend = BackendFactory.create_backend(
-            backend_type=settings.backend,
-            model_name=settings.model_name
-        )
-        
+        backend = BackendFactory.create_backend(backend_type=settings.backend, model_name=settings.model_name)
+
         # Create backend manager
         backend_manager = BackendManager(backend)
-        
+
         # Initialize backend (load model)
         logger.info("Initializing backend and loading model")
         await backend_manager.initialize()
-        
+
         # Set backend manager in routers
         embedding_router.set_backend_manager(backend_manager)
         reranking_router.set_backend_manager(backend_manager)
         health_router.set_backend_manager(backend_manager)
-        
+
         # Set startup time in health router
         health_router.startup_time = startup_time
-        
+
         logger.info(
             "Application startup completed",
             startup_time=time.time() - startup_time,
             backend=backend.__class__.__name__,
-            model_name=settings.model_name
+            model_name=settings.model_name,
         )
-        
+
         yield
-        
+
     except Exception as e:
         logger.error("Failed to initialize application", error=str(e))
         raise
-    
+
     finally:
         logger.info("Application shutdown")
 
@@ -81,14 +78,11 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add middleware with Context7 recommended patterns
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=settings.allowed_hosts
-)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
 app.add_middleware(
     CORSMiddleware,
@@ -104,46 +98,42 @@ app.add_middleware(
 async def logging_middleware(request: Request, call_next):
     """Log request and response details with processing time."""
     start_time = time.time()
-    
+
     # Log request
     logger.info(
         "Request started",
         method=request.method,
         url=str(request.url),
         client_ip=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent")
+        user_agent=request.headers.get("user-agent"),
     )
-    
+
     # Process request
     try:
         response = await call_next(request)
         processing_time = time.time() - start_time
-        
+
         # Add processing time header
         response.headers["X-Process-Time"] = str(processing_time)
-        
+
         # Log response
         logger.info(
             "Request completed",
             method=request.method,
             url=str(request.url),
             status_code=response.status_code,
-            processing_time=processing_time
+            processing_time=processing_time,
         )
-        
+
         return response
-    
+
     except Exception as e:
         processing_time = time.time() - start_time
-        
+
         logger.error(
-            "Request failed",
-            method=request.method,
-            url=str(request.url),
-            error=str(e),
-            processing_time=processing_time
+            "Request failed", method=request.method, url=str(request.url), error=str(e), processing_time=processing_time
         )
-        
+
         raise
 
 
@@ -151,10 +141,7 @@ async def logging_middleware(request: Request, call_next):
 async def get_backend_manager() -> BackendManager:
     """Dependency to get the backend manager instance."""
     if backend_manager is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Backend manager not initialized"
-        )
+        raise HTTPException(status_code=503, detail="Backend manager not initialized")
     return backend_manager
 
 
@@ -167,16 +154,16 @@ async def global_exception_handler(request: Request, exc: Exception):
         method=request.method,
         url=str(request.url),
         error=str(exc),
-        error_type=type(exc).__name__
+        error_type=type(exc).__name__,
     )
-    
+
     return JSONResponse(
         status_code=500,
         content={
             "error": "internal_server_error",
             "detail": "An unexpected error occurred",
-            "type": type(exc).__name__
-        }
+            "type": type(exc).__name__,
+        },
     )
 
 
@@ -184,43 +171,34 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Handle HTTP exceptions with structured logging."""
     logger.warning(
-        "HTTP exception",
-        method=request.method,
-        url=str(request.url),
-        status_code=exc.status_code,
-        detail=exc.detail
+        "HTTP exception", method=request.method, url=str(request.url), status_code=exc.status_code, detail=exc.detail
     )
-    
+
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": "http_error",
-            "detail": exc.detail,
-            "status_code": exc.status_code
-        }
+        content={"error": "http_error", "detail": exc.detail, "status_code": exc.status_code},
     )
 
 
 # Include routers with Context7 organization patterns
 app.include_router(
-    health_router.router,
-    responses={503: {"model": ErrorResponse, "description": "Service Unavailable"}}
+    health_router.router, responses={503: {"model": ErrorResponse, "description": "Service Unavailable"}}
 )
 
 app.include_router(
     embedding_router.router,
     responses={
         503: {"model": ErrorResponse, "description": "Service Unavailable"},
-        400: {"model": ErrorResponse, "description": "Bad Request"}
-    }
+        400: {"model": ErrorResponse, "description": "Bad Request"},
+    },
 )
 
 app.include_router(
     reranking_router.router,
     responses={
         503: {"model": ErrorResponse, "description": "Service Unavailable"},
-        400: {"model": ErrorResponse, "description": "Bad Request"}
-    }
+        400: {"model": ErrorResponse, "description": "Bad Request"},
+    },
 )
 
 
@@ -234,23 +212,20 @@ async def root():
         "description": "Production-ready text embedding and document reranking service",
         "docs": "/docs",
         "health": "/health",
-        "endpoints": {
-            "embed": "/api/v1/embed",
-            "rerank": "/api/v1/rerank",
-            "health": "/health"
-        },
+        "endpoints": {"embed": "/api/v1/embed", "rerank": "/api/v1/rerank", "health": "/health"},
         "backend": backend_manager.backend.__class__.__name__ if backend_manager else "not_initialized",
-        "status": "ready" if backend_manager and backend_manager.is_ready() else "initializing"
+        "status": "ready" if backend_manager and backend_manager.is_ready() else "initializing",
     }
 
 
 # Development server
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.reload,
-        log_level=settings.log_level.lower()
+        log_level=settings.log_level.lower(),
     )
