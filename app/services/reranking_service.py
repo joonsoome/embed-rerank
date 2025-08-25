@@ -7,9 +7,9 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from ..models.requests import RerankRequest
-from ..models.responses import RerankResponse, RerankResult, ErrorResponse
-from ..backends.base import BackendManager
+from app.models.requests import RerankRequest
+from app.models.responses import RerankResponse, RerankResult, ErrorResponse
+from app.backends.base import BackendManager
 
 logger = logging.getLogger(__name__)
 

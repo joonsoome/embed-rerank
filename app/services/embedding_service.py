@@ -7,9 +7,9 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from ..models.requests import EmbedRequest
-from ..models.responses import EmbedResponse, EmbeddingVector, ErrorResponse
-from ..backends.base import BackendManager
+from app.models.requests import EmbedRequest
+from app.models.responses import EmbedResponse, EmbeddingVector, ErrorResponse
+from app.backends.base import BackendManager
 
 logger = logging.getLogger(__name__)
 

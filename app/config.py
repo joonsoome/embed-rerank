@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Model Configuration
     model_name: str = Field(default="Qwen/Qwen3-Embedding-4B", description="HuggingFace model identifier")
-    mlx_model_path: Optional[Path] = Field(default=None, description="Path to MLX converted model (optional)")
+    model_path: Optional[Path] = Field(default=None, description="Path to MLX converted model (optional)")
     cross_encoder_model: Optional[str] = Field(default=None, description="Cross-encoder model for reranking")
     max_sequence_length: int = Field(default=512, description="Maximum input sequence length")
 
@@ -64,12 +64,12 @@ class Settings(BaseSettings):
                 return "torch"
         return v
 
-    @field_validator("mlx_model_path")
+    @field_validator("model_path")
     @classmethod
-    def validate_mlx_path(cls, v: Optional[Path], info: ValidationInfo) -> Optional[Path]:  # type: ignore[override]
-        """Validate MLX model path if specified."""
+    def validate_model_path(cls, v: Optional[Path], info: ValidationInfo) -> Optional[Path]:  # type: ignore[override]
+        """Validate model path if specified."""
         if v is not None and not v.exists():
-            raise ValueError(f"MLX model path does not exist: {v}")
+            raise ValueError(f"Model path does not exist: {v}")
         return v
 
     @field_validator("batch_size", "max_batch_size")

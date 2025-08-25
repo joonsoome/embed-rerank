@@ -5,12 +5,12 @@ Backend factory for creating appropriate embedding backends.
 from typing import Optional
 import platform
 
-from .base import BaseBackend
-from .torch_backend import TorchBackend
-from .mlx_backend import MLXBackend, MLX_AVAILABLE
-from ..utils.device import detect_optimal_device
-from ..utils.logger import setup_logging
-from ..config import settings
+from app.backends.base import BaseBackend
+from app.backends.torch_backend import TorchBackend
+from app.backends.mlx_backend import MLXBackend, MLX_AVAILABLE
+from app.utils.device import detect_optimal_device
+from app.utils.logger import setup_logging
+from app.config import settings
 
 logger = setup_logging()
 
@@ -54,19 +54,14 @@ class BackendFactory:
         """Detect the optimal backend for the current system."""
         device_info = detect_optimal_device()
 
-        # Prefer MLX on Apple Silicon if available
-        if device_info.get("apple_silicon", False) and device_info.get("mlx_available", False):
-            logger.info("Auto-selected MLX backend", reason="apple_silicon_with_mlx")
-            return "mlx"
-
-        # Fallback to PyTorch
+        # Default to PyTorch for better compatibility
         if device_info.get("torch_available", False):
-            logger.info("Auto-selected Torch backend", reason="torch_available")
+            logger.info("Auto-selected Torch backend", reason="torch_available_default")
             return "torch"
 
-        # Last resort: try MLX anyway (will fail gracefully)
-        if device_info.get("apple_silicon", False):
-            logger.warning("Attempting MLX backend without confirmed availability")
+        # Only use MLX if specifically optimized models are available
+        if device_info.get("apple_silicon", False) and device_info.get("mlx_available", False):
+            logger.info("Auto-selected MLX backend", reason="apple_silicon_with_mlx")
             return "mlx"
 
         # Default fallback
@@ -89,14 +84,12 @@ class BackendFactory:
         if platform.machine() != "arm64":
             raise ValueError("MLX backend requires Apple Silicon (arm64)")
 
-        mlx_model_path = kwargs.get("model_path", settings.mlx_model_path)
+        model_path = kwargs.get("model_path", settings.model_path)
 
-        # Use MLX-optimized model for MLX backend
-        mlx_model_name = "mlx-community/Qwen3-Embedding-4B-4bit-DWQ"
+        # Use the provided model name instead of forcing MLX-specific model
+        logger.info("Creating MLX backend", model_name=model_name, model_path=model_path)
 
-        logger.info("Creating MLX backend", model_name=mlx_model_name, model_path=mlx_model_path)
-
-        return MLXBackend(mlx_model_name, model_path=mlx_model_path)
+        return MLXBackend(model_name, model_path=model_path)
 
     @staticmethod
     def _create_torch_backend(model_name: str, **kwargs) -> TorchBackend:
