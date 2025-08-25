@@ -55,7 +55,9 @@ restart_server() {
   fi
   # Restart via server-run.sh but prevent spawning a second watchdog
   echo "[watchdog] Starting fresh server instance" | tee -a "$LOGFILE"
-  WATCHDOG_SKIP=1 bash "$REPO_ROOT/tools/server-run.sh" >> "$LOGFILE" 2>&1 || {
+  # Use bash -lc with a single argument so paths with spaces are handled
+  # correctly by the shell. This avoids splitting $REPO_ROOT on spaces.
+  WATCHDOG_SKIP=1 bash -lc "exec '$REPO_ROOT/tools/server-run.sh'" >> "$LOGFILE" 2>&1 || {
     echo "[watchdog] Restart attempt failed" | tee -a "$LOGFILE"
   }
 }

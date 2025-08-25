@@ -98,7 +98,9 @@ if [[ "${WATCHDOG_SKIP:-0}" != "1" && "$WATCHDOG" == "1" ]]; then
     echo "Watchdog already running (PID $(cat "$WATCHDOG_PIDFILE"))"
   else
     echo "Starting watchdog..." | tee -a "$LOGFILE"
-    nohup bash "$REPO_ROOT/tools/server-run-watchdog.sh" >> "$LOGFILE" 2>&1 &
+  # Execute watchdog script directly (ensure script is executable). Quoting the
+  # full path prevents word-splitting when REPO_ROOT contains spaces.
+  nohup "$REPO_ROOT/tools/server-run-watchdog.sh" >> "$LOGFILE" 2>&1 &
     if command -v disown >/dev/null 2>&1; then disown $! || true; fi
   fi
 fi
