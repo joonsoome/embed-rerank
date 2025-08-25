@@ -1,7 +1,5 @@
 # 🔥 Single Model Embedding & Reranking API
 
-**Lightning-fast text embeddings and document reranking powered by Apple Silicon & MLX**
-
 <div align="center">
 <strong>Lightning-fast local embeddings & reranking for Apple Silicon (MLX-first, OpenAI & TEI compatible)</strong>
 <br/><br/>
