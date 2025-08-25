@@ -288,7 +288,6 @@ HF_HOME=/path/to/hf/home                      # HF home directory
 4. `~/.cache/huggingface/hub/` → Default location
 
 Runtime precedence: request params > headers > env defaults.
-```
 
 ### 📂 Model Cache Management
 
