@@ -2,13 +2,12 @@
 Configuration management for the embed-rerank API.
 """
 
-import os
 import platform
 from pathlib import Path
 from typing import Literal, Optional, List
 
 from pydantic import Field, field_validator, ValidationInfo
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -98,15 +97,12 @@ class Settings(BaseSettings):
             raise ValueError(f"Log level must be one of: {valid_levels}")
         return v.upper()
 
-    class Config:
-        env_file = ".env"
-        env_prefix = ""
-        case_sensitive = False
-    # Allow unknown environment variables so adding extra operational
-    # settings in .env (e.g., debug, enable_cors, metrics_port) does not
-    # trigger ValidationError. They will simply be ignored unless
-    # explicitly defined as model fields.
-    extra = "ignore"
+    # Pydantic v2 settings configuration
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",  # ignore unknown keys (backward compatibility with older .env entries)
+    )
 
 
 # Global settings instance
