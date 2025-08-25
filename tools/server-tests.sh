@@ -34,13 +34,15 @@ NC='\033[0m' # No Color
 # Default configuration
 SERVER_URL="http://localhost:11436"
 TEST_MODE="full"  # full, quick, performance, quality
-OUTPUT_DIR="tools/test-results"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 RESULTS_PREFIX="test_${TIMESTAMP}"
 
 # Script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Ensure output path is inside the tools directory next to this script
+OUTPUT_DIR="$SCRIPT_DIR/test-results"
 
 print_header() {
     echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
