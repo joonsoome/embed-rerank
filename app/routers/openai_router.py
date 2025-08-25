@@ -352,7 +352,19 @@ async def create_embeddings(
             batch_size=batch_size if 'batch_size' in locals() else None,
         )
 
-        # 🚨 Return OpenAI-style error response
+        # If this is a validation error from Pydantic, return 422
+        try:
+            from pydantic import ValidationError
+
+            if isinstance(e, ValidationError) or 'validation' in str(e).lower():
+                raise HTTPException(status_code=422, detail={"error": str(e)})
+        except Exception:
+            pass
+
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=400, detail={"error": str(e)})
+
+        # 🚨 Return OpenAI-style error response for unexpected errors
         raise HTTPException(
             status_code=500,
             detail={

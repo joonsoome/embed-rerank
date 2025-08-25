@@ -3,6 +3,7 @@ Health check router for monitoring system status.
 """
 
 import time
+import datetime
 import psutil
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
@@ -52,11 +53,30 @@ async def health_check(manager: BackendManager = Depends(get_backend_manager)):
         memory_info = psutil.virtual_memory()
         cpu_info = psutil.cpu_percent(interval=0.1)
 
+        # Normalize backend type for compatibility
+        backend_name = backend_health.get("backend", "unknown")
+        if "MLX" in backend_name:
+            backend_type = "mlx"
+        elif "torch" in backend_name.lower():
+            backend_type = "torch"
+        else:
+            backend_type = "cpu"
+
+        # Top-level service information
+        service_info = {
+            "name": "embed-rerank",
+            "version": "1.0.0", 
+            "description": "Embedding & reranking service",
+        }
+
         health_data = {
             "status": "healthy" if manager.is_ready() else "initializing",
             "uptime": time.time() - startup_time if 'startup_time' in globals() else 0,
+            "timestamp": datetime.datetime.now(),
+            "service": service_info,
             "backend": {
                 "name": backend_health.get("backend", "unknown"),
+                "type": backend_type,  # Use normalized type
                 "status": backend_health.get("status", "unknown"),
                 "model_loaded": backend_health.get("model_loaded", False),
                 "model_name": backend_health.get("model_name"),
@@ -71,7 +91,9 @@ async def health_check(manager: BackendManager = Depends(get_backend_manager)):
             },
             "performance": {
                 "test_embedding_time": backend_health.get("test_embedding_time"),
-                "embedding_dimension": backend_health.get("embedding_dim"),
+                # Provide both keys for compatibility
+                "embedding_dimension": backend_health.get("embedding_dim") or backend_health.get("embedding_dimension"),
+                "embedding_dim": backend_health.get("embedding_dim") or backend_health.get("embedding_dimension"),
             },
         }
 

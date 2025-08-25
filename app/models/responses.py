@@ -40,6 +40,8 @@ class EmbedResponse(BaseModel):
         ..., description="Usage statistics", example={"total_texts": 3, "total_tokens": 15, "processing_time_ms": 45.2}
     )
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    # Additional fields for test compatibility
+    num_texts: Optional[int] = Field(None, description="Number of input texts processed", example=2)
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
@@ -80,6 +82,8 @@ class RerankResponse(BaseModel):
         example={"total_passages": 10, "returned_passages": 5, "processing_time_ms": 123.7},
     )
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    # Additional fields for test compatibility
+    num_passages: Optional[int] = Field(None, description="Number of input passages processed", example=5)
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
@@ -90,6 +94,12 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="Service status (healthy/unhealthy/not_ready/warning)", example="healthy")
     uptime: float = Field(..., description="Service uptime in seconds", example=3600.5)
+    timestamp: datetime = Field(default_factory=datetime.now, description="Health check timestamp")
+    service: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Service information",
+        example={"name": "embed-rerank", "version": "1.0.0", "description": "Embedding & reranking service"},
+    )
     backend: Optional[Dict[str, Any]] = Field(
         None,
         description="Backend information",
@@ -110,7 +120,6 @@ class HealthResponse(BaseModel):
     performance: Optional[Dict[str, Any]] = Field(
         None, description="Performance metrics", example={"test_embedding_time": 0.045, "embedding_dimension": 384}
     )
-    timestamp: datetime = Field(default_factory=datetime.now, description="Health check timestamp")
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}

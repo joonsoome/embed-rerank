@@ -88,6 +88,9 @@ async def rerank_passages(request: RerankRequest, service: RerankingService = De
         response_dict = response.model_dump()
         filtered_response = filter_none_values(response_dict)
 
+        # Add backward-compatible num_passages field
+        filtered_response["num_passages"] = len(filtered_response.get("results", []))
+
         # Create JSON with custom encoder for datetime
         json_content = json.dumps(filtered_response, default=json_encoder)
         return JSONResponse(content=json.loads(json_content))

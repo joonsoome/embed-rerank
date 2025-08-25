@@ -85,13 +85,16 @@ async def generate_embeddings(request: EmbedRequest, service: EmbeddingService =
     - RAG (Retrieval Augmented Generation) systems
     - Real-time content recommendations
 
-    Args:
-        request: EmbedRequest with texts and optional batch configuration
-        service: Apple MLX-powered embedding service
+    try:
+        #  generate embeddings using Apple MLX magic
+        response = await service.embed_texts(request)
 
-    Returns:
-        EmbedResponse with vectors, timing, and Apple Silicon performance metrics
+        # Convert to dict and add backward-compatible fields expected by tests
+        resp = response.model_dump()
+        resp["num_texts"] = len(response.embeddings)
+        return resp
 
+    except ValueError as e:
     Example:
         ```json
         {
@@ -105,7 +108,11 @@ async def generate_embeddings(request: EmbedRequest, service: EmbeddingService =
         # 🧠 Generate embeddings using Apple MLX magic
         response = await service.embed_texts(request)
 
-        return response
+        # Convert to dict and add backward-compatible fields expected by tests
+        response_dict = response.model_dump()
+        response_dict["num_texts"] = len(response.embeddings)
+        
+        return response_dict
 
     except ValueError as e:
         # 📝 Input validation errors - help users get it right

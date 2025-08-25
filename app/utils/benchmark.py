@@ -16,20 +16,26 @@ logger = setup_logging()
 
 
 class BackendBenchmark:
-    """Tool for benchmarking backend performance."""
+    """Tool for benchmarking backend performance.
 
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        """
-        Initialize benchmark with a model.
+    Can be constructed with either a backend instance or a model_name. Tests
+    expect to pass a backend instance and access benchmark.backend.
+    """
 
-        Args:
-            model_name: Model to use for benchmarking
-        """
-        self.model_name = model_name
+    def __init__(self, backend_or_model: object = "sentence-transformers/all-MiniLM-L6-v2"):
+        """Initialize benchmark with a backend instance or model name."""
         self.results = {}
 
+        # If given a backend instance (has embed_texts), use it directly
+        if hasattr(backend_or_model, 'embed_texts'):
+            self.backend = backend_or_model
+            self.model_name = getattr(self.backend, 'model_name', None)
+        else:
+            self.backend = None
+            self.model_name = backend_or_model
+
     async def benchmark_backend(
-        self, backend_type: str, test_texts: List[str], iterations: int = 3, batch_sizes: List[int] = [1, 8, 16, 32]
+    self, backend_type: str, test_texts: List[str], iterations: int = 3, batch_sizes: List[int] = [1, 8, 16, 32]
     ) -> Dict[str, Any]:
         """
         Benchmark a specific backend.
@@ -132,6 +138,26 @@ class BackendBenchmark:
         except Exception as e:
             logger.error("Backend benchmark failed", backend_type=backend_type, error=str(e))
             raise
+
+    async def run_single_benchmark(self, texts: List[str], batch_size: int = 1) -> Dict[str, Any]:
+        """Run a single benchmark using the provided backend instance or the default model.
+
+        Returns a dict with processing_time and throughput.
+        """
+        if self.backend is None:
+            # Create a temporary backend for the run
+            backend = BackendFactory.create_backend('torch', self.model_name)
+            await backend.load_model()
+        else:
+            backend = self.backend
+
+        start = time.time()
+        result = await backend.embed_texts(texts, batch_size=batch_size)
+        processing_time = time.time() - start
+
+        throughput = len(texts) / processing_time if processing_time > 0 else float('inf')
+
+        return {"processing_time": processing_time, "throughput": throughput}
 
     def _find_optimal_batch_size(self, batch_results: Dict[int, Dict]) -> int:
         """Find the optimal batch size based on throughput."""

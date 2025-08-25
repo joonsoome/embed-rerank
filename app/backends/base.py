@@ -5,6 +5,7 @@ Abstract base class for embedding backends.
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import asyncio
 from typing import Dict, Any, List, Optional
 
 import numpy as np
@@ -224,3 +225,39 @@ class BackendManager:
             "status": "ready" if self.is_ready() else "initializing",
             **info,
         }
+
+    async def cleanup(self) -> None:
+        """Cleanup resources associated with the backend and manager.
+
+        This attempts to gracefully shut down executors and unload models where
+        possible. It's safe to call multiple times.
+        """
+        try:
+            # Attempt to call backend-specific cleanup/unload if available
+            if hasattr(self.backend, 'unload_model'):
+                maybe = self.backend.unload_model
+                if asyncio.iscoroutinefunction(maybe):
+                    await maybe()
+                else:
+                    maybe()
+
+            # Shutdown backend thread pool if present
+            if hasattr(self.backend, '_executor') and self.backend._executor is not None:
+                try:
+                    self.backend._executor.shutdown(wait=True)
+                except Exception:
+                    pass
+
+            # Clear loaded flags
+            if hasattr(self.backend, '_is_loaded'):
+                try:
+                    self.backend._is_loaded = False
+                except Exception:
+                    pass
+
+        finally:
+            self._initialized = False
+
+    # Backwards-compatible alias
+    def get_backend_info(self) -> Dict[str, Any]:
+        return self.get_current_backend_info()

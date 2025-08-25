@@ -89,6 +89,7 @@ class RerankingService:
                     "query_length": len(request.query),
                 },
                 timestamp=datetime.now(),
+                num_passages=len(request.passages),  # Add this field for test compatibility
             )
 
             logger.info(f"Successfully processed rerank request {request_id} in {processing_time:.3f}s")

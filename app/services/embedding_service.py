@@ -95,6 +95,7 @@ class EmbeddingService:
                     "normalize": request.normalize,
                 },
                 timestamp=datetime.now(),
+                num_texts=len(request.texts),  # Add this field for test compatibility
             )
 
             logger.info(f"Successfully processed embedding request {request_id} in {processing_time:.3f}s")

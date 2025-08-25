@@ -16,7 +16,7 @@ Transform your TEI workflow into an Apple Silicon powerhouse!
 import time
 from typing import List, Optional, Union, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 import structlog
 
 from ..backends.base import BackendManager
@@ -105,6 +105,7 @@ class TEIRerankRequest(BaseModel):
             ]
         },
     )
+    top_k: Optional[int] = Field(default=None, description="Maximum number of results to return", ge=1)
     raw_scores: Optional[bool] = Field(default=False, description="Whether to return raw scores or normalized scores")
     return_text: Optional[bool] = Field(default=True, description="Whether to return the original text in the response")
 
@@ -245,7 +246,7 @@ async def tei_rerank(
         internal_request = RerankRequest(
             query=request.query,
             passages=request.texts,
-            top_k=len(request.texts),  # Return all for TEI compatibility
+            top_k=request.top_k if request.top_k else len(request.texts),
             return_documents=request.return_text,
         )
 
@@ -280,6 +281,32 @@ async def tei_rerank(
         )
 
         return tei_results
+
+    except ValidationError as e:
+        processing_time = time.time() - start_time
+
+        logger.error(
+            "💥 TEI-compatible reranking request failed",
+            error=str(e),
+            error_type="ValidationError",
+            processing_time=processing_time,
+        )
+
+        # 🚨 Return 422 for validation errors
+        raise HTTPException(status_code=422, detail=f"Validation error: {str(e)}")
+
+    except ValueError as e:
+        processing_time = time.time() - start_time
+
+        logger.error(
+            "💥 TEI-compatible reranking request failed",
+            error=str(e),
+            error_type="ValueError",
+            processing_time=processing_time,
+        )
+
+        # 🚨 Return 400 for input errors
+        raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
 
     except Exception as e:
         processing_time = time.time() - start_time

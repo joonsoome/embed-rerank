@@ -184,10 +184,13 @@ class TorchBackend(BaseBackend):
         if self._is_loaded and self.model:
             try:
                 # Get model-specific info
+                embedding_dim = self.model.get_sentence_embedding_dimension()
                 info.update(
                     {
                         "max_seq_length": getattr(self.model, 'max_seq_length', 'unknown'),
-                        "embedding_dimension": self.model.get_sentence_embedding_dimension(),
+                        "embedding_dimension": embedding_dim,
+                        # Backwards-compatible key expected by tests
+                        "embedding_dim": embedding_dim,
                     }
                 )
             except Exception as e:
@@ -233,6 +236,18 @@ class TorchBackend(BaseBackend):
                     )
             else:
                 info["cuda_available"] = False
+
+            # Try to provide available memory info where possible
+            try:
+                # On macOS with MPS we can estimate system memory via psutil if available
+                import psutil
+
+                vm = psutil.virtual_memory()
+                info["available_memory"] = vm.available
+                info["available_memory_gb"] = round(vm.available / (1024 ** 3), 2)
+            except Exception:
+                # Best-effort only
+                pass
 
         except Exception as e:
             logger.warning("Could not get device info", error=str(e))
