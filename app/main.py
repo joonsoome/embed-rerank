@@ -26,7 +26,7 @@ import structlog
 from .config import settings
 from .backends.base import BackendManager
 from .backends.factory import BackendFactory
-from .routers import embedding_router, reranking_router, health_router
+from .routers import embedding_router, reranking_router, health_router, openai_router, tei_router
 from .models.responses import ErrorResponse
 from .utils.logger import setup_logging
 
@@ -71,6 +71,8 @@ async def lifespan(app: FastAPI):
         embedding_router.set_backend_manager(backend_manager)
         reranking_router.set_backend_manager(backend_manager)
         health_router.set_backend_manager(backend_manager)
+        openai_router.set_backend_manager(backend_manager)
+        tei_router.set_backend_manager(backend_manager)
 
         # ⏱️ Track our lightning-fast startup time
         health_router.startup_time = startup_time
@@ -260,6 +262,24 @@ app.include_router(
     },
 )
 
+# 🔄 OpenAI Compatibility Router: Drop-in Replacement Magic
+app.include_router(
+    openai_router.router,
+    responses={
+        503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"},
+        400: {"model": ErrorResponse, "description": "Invalid Request"},
+    },
+)
+
+# 🔄 TEI Compatibility Router: Hugging Face TEI Drop-in Replacement
+app.include_router(
+    tei_router.router,
+    responses={
+        503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"},
+        400: {"model": ErrorResponse, "description": "Invalid Request"},
+    },
+)
+
 
 @app.get("/", tags=["root"])
 async def root():
@@ -281,7 +301,13 @@ async def root():
         "endpoints": {
             "embed": "/api/v1/embed", 
             "rerank": "/api/v1/rerank", 
-            "health": "/health"
+            "health": "/health",
+            "openai_embeddings": "/v1/embeddings",
+            "openai_models": "/v1/models",
+            "openai_health": "/v1/health",
+            "tei_embed": "/embed",
+            "tei_rerank": "/rerank",
+            "tei_info": "/info"
         },
         "backend": backend_manager.backend.__class__.__name__ if backend_manager else "initializing",
         "status": "🚀 ready" if backend_manager and backend_manager.is_ready() else "🔄 initializing",
