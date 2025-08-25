@@ -1,8 +1,8 @@
 """
 🚀 Apple MLX Backend: Where Silicon Dreams Meet AI Reality
 
-This is the heart of our Apple Silicon optimization. The MLX backend harnesses 
-the revolutionary MLX framework to deliver unprecedented performance on Apple's 
+This is the heart of our Apple Silicon optimization. The MLX backend harnesses
+the revolutionary MLX framework to deliver unprecedented performance on Apple's
 unified memory architecture.
 
 🧠 What makes MLX special:
@@ -47,26 +47,26 @@ except ImportError as e:
 class MLXBackend(BaseBackend):
     """
     🚀 Apple MLX Backend: The Silicon Symphony
-    
-    This backend transforms Apple Silicon into an AI powerhouse. Using MLX's 
+
+    This backend transforms Apple Silicon into an AI powerhouse. Using MLX's
     revolutionary framework, we achieve sub-millisecond inference that would
     make even the most demanding ML engineers smile.
-    
+
     🎯 Apple MLX Magic:
     - Unified Memory Architecture: Zero-copy operations
     - Metal Performance Shaders: Hardware acceleration
     - 4-bit Quantization: Efficiency without compromise
     - Dynamic Graph Compilation: Adaptive optimization
-    
+
     Join the Apple MLX community in redefining on-device AI performance!
     """
 
     def __init__(self, model_name: str = "mlx-community/Qwen3-Embedding-4B-4bit-DWQ", model_path: Optional[str] = None):
         """
         🏗️ Initialize the Apple MLX Backend
-        
+
         Setting up our connection to Apple Silicon's neural processing unit.
-        The default model (Qwen3-Embedding-4B-4bit-DWQ) is specifically optimized 
+        The default model (Qwen3-Embedding-4B-4bit-DWQ) is specifically optimized
         for MLX with 4-bit quantization - maximum performance, minimal memory.
 
         Args:
@@ -92,22 +92,22 @@ class MLXBackend(BaseBackend):
         self.config = None
 
         logger.info(
-            "🧠 Initializing Apple MLX Backend - preparing for silicon magic", 
-            model_name=model_name, 
-            model_path=model_path, 
-            device="apple_silicon"
+            "🧠 Initializing Apple MLX Backend - preparing for silicon magic",
+            model_name=model_name,
+            model_path=model_path,
+            device="apple_silicon",
         )
 
     async def load_model(self) -> None:
         """
         🚀 Model Loading: The MLX Awakening
-        
-        This is where Apple Silicon comes alive! We load our 4-bit quantized 
+
+        This is where Apple Silicon comes alive! We load our 4-bit quantized
         Qwen3 model into unified memory, preparing for lightning-fast inference.
-        
+
         The MLX framework handles all the Metal optimization automatically,
         giving us that signature Apple "it just works" experience.
-        
+
         Expected loading time: ~0.36s (cached) to ~22s (first download)
         """
         if self._is_loaded:
@@ -120,18 +120,16 @@ class MLXBackend(BaseBackend):
         try:
             # 🔄 Run model loading in thread pool to avoid blocking the event loop
             loop = asyncio.get_event_loop()
-            self.model, self.tokenizer, self.config = await loop.run_in_executor(
-                self._executor, self._load_model_sync
-            )
+            self.model, self.tokenizer, self.config = await loop.run_in_executor(self._executor, self._load_model_sync)
 
             self._load_time = time.time() - start_time
             self._is_loaded = True
 
             logger.info(
                 "✅ MLX model loaded successfully - Apple Silicon is ready to rock!",
-                model_name=self.model_name, 
-                load_time=self._load_time, 
-                device="apple_silicon_mlx"
+                model_name=self.model_name,
+                load_time=self._load_time,
+                device="apple_silicon_mlx",
             )
 
         except Exception as e:
@@ -141,16 +139,16 @@ class MLXBackend(BaseBackend):
     def _load_model_sync(self):
         """
         🧠 Synchronous MLX Model Loading: The Silicon Awakening
-        
-        This is where the magic happens! We're downloading and initializing 
+
+        This is where the magic happens! We're downloading and initializing
         a 4-bit quantized Qwen3 model specifically optimized for Apple MLX.
-        
+
         🌟 MLX Community Innovation:
         - 4-bit quantization for maximum efficiency
-        - Optimized for Apple's unified memory architecture  
+        - Optimized for Apple's unified memory architecture
         - Metal Performance Shaders acceleration
         - Zero-copy operations between CPU and GPU
-        
+
         The future of on-device AI is here, and it runs on Apple Silicon!
         """
         try:
@@ -170,33 +168,36 @@ class MLXBackend(BaseBackend):
             # Try to load tokenizer with multiple fallback strategies
             tokenizer = None
             tokenizer_errors = []
-            
+
             # Strategy 1: Try AutoTokenizer with trust_remote_code
             try:
                 from transformers import AutoTokenizer
+
                 tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
                 logger.info("✅ Loaded AutoTokenizer successfully")
             except Exception as e:
                 tokenizer_errors.append(f"AutoTokenizer: {str(e)}")
-                
+
             # Strategy 2: Try without trust_remote_code
             if not tokenizer:
                 try:
                     from transformers import AutoTokenizer
+
                     tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=False)
                     logger.info("✅ Loaded AutoTokenizer without trust_remote_code")
                 except Exception as e:
                     tokenizer_errors.append(f"AutoTokenizer (no trust): {str(e)}")
-            
+
             # Strategy 3: Try direct model name (in case local dir has issues)
             if not tokenizer:
                 try:
                     from transformers import AutoTokenizer
+
                     tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
                     logger.info("✅ Loaded AutoTokenizer from model name")
                 except Exception as e:
                     tokenizer_errors.append(f"AutoTokenizer (model name): {str(e)}")
-            
+
             # Strategy 4: Create simple fallback tokenizer
             if not tokenizer:
                 logger.warning("Failed to load transformers tokenizer, using simple tokenizer", errors=tokenizer_errors)
@@ -249,12 +250,14 @@ class MLXBackend(BaseBackend):
 
     def _create_simple_tokenizer(self):
         """Minimal whitespace tokenizer used when transformers tokenizer is unavailable."""
+
         class SimpleTokenizer:
             def __init__(self):
                 self.vocab: Dict[str, int] = {"<PAD>": 0, "<UNK>": 1}
 
             def __call__(self, texts: List[str], padding=True, truncation=True, max_length=512, return_tensors='np'):
                 import numpy as _np
+
                 tokenized = []
                 for t in texts:
                     ids = []
@@ -271,10 +274,12 @@ class MLXBackend(BaseBackend):
                     pad_len = max_len - len(ids)
                     arr.append(ids + [0] * pad_len)
                 return {"input_ids": _np.array(arr, dtype=_np.int64)}
+
         return SimpleTokenizer()
 
     def _create_placeholder_model(self, hidden_size: int):
         """Create a lightweight placeholder embedding model producing deterministic embeddings."""
+
         class PlaceholderModel:
             def __init__(self, hidden_size: int):
                 self.hidden_size = hidden_size
@@ -282,6 +287,7 @@ class MLXBackend(BaseBackend):
             def embed(self, input_ids):
                 # Deterministic per row using hash of the sequence
                 import numpy as _np
+
                 batch = input_ids.shape[0]
                 embeddings = []
                 for row in range(batch):
@@ -289,16 +295,17 @@ class MLXBackend(BaseBackend):
                     seed = hash(tuple(row_ids)) % (2**32 - 1)
                     rng = _np.random.default_rng(seed)
                     vec = rng.standard_normal(self.hidden_size).astype('float32')
-                    vec /= (np.linalg.norm(vec) + 1e-8)
+                    vec /= np.linalg.norm(vec) + 1e-8
                     embeddings.append(vec)
                 return mx.array(_np.stack(embeddings))
+
         return PlaceholderModel(hidden_size)
 
     def _find_weights_file(self, model_dir: str) -> Optional[str]:
         """
         🔍 MLX Weights Discovery: Finding the Apple Silicon Optimized Model
-        
-        MLX models can come in different formats. We're looking for the 
+
+        MLX models can come in different formats. We're looking for the
         safetensors format which is preferred for its security and speed.
         """
         for filename in ["model.safetensors", "weights.npz"]:
@@ -316,11 +323,11 @@ class MLXBackend(BaseBackend):
     def _create_mlx_embedding_model(self, config: dict, weights: dict):
         """
         🏗️ MLX Embedding Model Factory: Crafting Apple Silicon Magic
-        
-        This creates our custom MLX embedding model optimized for the Qwen3 
-        architecture. We're building a lightweight wrapper that maximizes 
+
+        This creates our custom MLX embedding model optimized for the Qwen3
+        architecture. We're building a lightweight wrapper that maximizes
         Apple Silicon performance through MLX's unified memory system.
-        
+
         🚀 Apple MLX Innovation:
         - Direct access to embedding layers
         - Optimized mean pooling operations
@@ -339,9 +346,9 @@ class MLXBackend(BaseBackend):
                 def embed(self, input_ids):
                     """
                     ⚡ Generate Embeddings: Apple Silicon at Light Speed
-                    
-                    This method transforms text tokens into high-dimensional 
-                    embeddings using Apple's unified memory architecture for 
+
+                    This method transforms text tokens into high-dimensional
+                    embeddings using Apple's unified memory architecture for
                     maximum performance.
                     """
                     # 🎯 This is simplified for the MLX community demo

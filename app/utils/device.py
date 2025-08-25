@@ -1,13 +1,13 @@
 """
 🚀 Apple Silicon Device Detection: Unleashing the Power of Apple's Chips
 
-This module is your gateway to detecting and optimizing for Apple Silicon's 
-incredible capabilities. We automatically detect M-series chips, configure 
+This module is your gateway to detecting and optimizing for Apple Silicon's
+incredible capabilities. We automatically detect M-series chips, configure
 MLX acceleration, and ensure your AI workloads run at maximum speed.
 
 🧠 Apple Silicon Magic:
 - Unified Memory Architecture detection
-- MLX framework compatibility checking  
+- MLX framework compatibility checking
 - Metal Performance Shaders optimization
 - Automatic backend selection for peak performance
 
@@ -21,13 +21,13 @@ from typing import Dict, Any, Optional
 def detect_optimal_device() -> Dict[str, Any]:
     """
     🔍 Detect Optimal Device: Unleashing Apple Silicon Potential
-    
-    This function is like a digital sommelier for Apple Silicon - it tastes 
+
+    This function is like a digital sommelier for Apple Silicon - it tastes
     your hardware configuration and recommends the perfect AI backend pairing.
-    
-    When it detects Apple Silicon (M1/M2/M3/M4), it practically jumps with 
+
+    When it detects Apple Silicon (M1/M2/M3/M4), it practically jumps with
     excitement and immediately suggests MLX for that unified memory magic!
-    
+
     Returns:
         Dict with device capabilities and Apple Silicon optimization recommendations
     """
@@ -100,12 +100,12 @@ def detect_optimal_device() -> Dict[str, Any]:
 def get_optimal_torch_device() -> str:
     """
     🎯 Optimal PyTorch Device Selection: Finding Your Silicon Sweet Spot
-    
-    This function is like a personal trainer for your PyTorch models - it finds 
-    the best device to flex those neural network muscles. On Apple Silicon, 
-    it enthusiastically points to MPS (Metal Performance Shaders) for that 
+
+    This function is like a personal trainer for your PyTorch models - it finds
+    the best device to flex those neural network muscles. On Apple Silicon,
+    it enthusiastically points to MPS (Metal Performance Shaders) for that
     GPU-accelerated goodness!
-    
+
     Returns:
         Device string optimized for your hardware ("mps", "cuda", or "cpu")
     """
@@ -130,11 +130,11 @@ def get_optimal_torch_device() -> str:
 def get_memory_info() -> Optional[Dict[str, Any]]:
     """
     📊 Memory Information: Understanding Your Apple Silicon Memory Pool
-    
-    Apple Silicon's unified memory architecture is a thing of beauty - CPU and 
-    GPU share the same memory pool, eliminating costly data transfers. This 
+
+    Apple Silicon's unified memory architecture is a thing of beauty - CPU and
+    GPU share the same memory pool, eliminating costly data transfers. This
     function helps you understand and monitor that magical unified memory.
-    
+
     Returns:
         Dict with memory information or None if psutil unavailable
     """
@@ -157,11 +157,11 @@ def get_memory_info() -> Optional[Dict[str, Any]]:
 def validate_device_compatibility(backend: str) -> bool:
     """
     ✅ Device Compatibility Validation: Ensuring Perfect Harmony
-    
-    This function is like a compatibility matchmaker - it ensures your chosen 
-    backend can dance beautifully with your hardware. MLX + Apple Silicon? 
+
+    This function is like a compatibility matchmaker - it ensures your chosen
+    backend can dance beautifully with your hardware. MLX + Apple Silicon?
     Perfect match! PyTorch + anything? Pretty solid relationship!
-    
+
     Args:
         backend: Your desired backend ("mlx" for Apple Silicon magic, "torch" for versatility)
 

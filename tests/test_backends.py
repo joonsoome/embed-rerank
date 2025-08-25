@@ -71,7 +71,7 @@ class TestTorchBackend:
     async def test_torch_backend_model_loading(self):
         """Test torch backend model loading."""
         backend = TorchBackend("sentence-transformers/all-MiniLM-L6-v2")
-        
+
         # Test model loading
         await backend.load_model()
         assert backend.is_loaded
@@ -153,7 +153,7 @@ class TestMLXBackend:
     async def test_mlx_backend_loading(self):
         """Test MLX backend model loading."""
         backend = BackendFactory.create_backend("mlx", "mlx-community/Qwen3-Embedding-4B-4bit-DWQ")
-        
+
         # Test loading
         await backend.load_model()
         assert backend.is_loaded
@@ -168,7 +168,7 @@ class TestMLXBackend:
         # Test embeddings
         texts = ["Apple MLX is fast", "Testing embedding generation"]
         result = await backend.embed_texts(texts)
-        
+
         assert result.vectors.shape[0] == len(texts)
         assert result.vectors.shape[1] > 0
         assert result.processing_time > 0
@@ -182,7 +182,7 @@ class TestBackendManager:
         """Test backend manager initialization."""
         backend = TorchBackend("sentence-transformers/all-MiniLM-L6-v2")
         manager = BackendManager(backend)
-        
+
         assert not manager.is_ready()
         await manager.initialize()
         assert manager.is_ready()
@@ -192,7 +192,7 @@ class TestBackendManager:
         """Test backend manager get_backend method."""
         backend = TorchBackend("sentence-transformers/all-MiniLM-L6-v2")
         manager = BackendManager(backend)
-        
+
         retrieved_backend = manager.get_backend()
         assert retrieved_backend is backend
 
@@ -235,13 +235,10 @@ class TestBackendBenchmarks:
         """Test single benchmark run."""
         backend = TorchBackend("sentence-transformers/all-MiniLM-L6-v2")
         await backend.load_model()
-        
+
         benchmark = BackendBenchmark(backend)
-        result = await benchmark.run_single_benchmark(
-            texts=["Test text for benchmarking"],
-            batch_size=1
-        )
-        
+        result = await benchmark.run_single_benchmark(texts=["Test text for benchmarking"], batch_size=1)
+
         assert "processing_time" in result
         assert "throughput" in result
         assert result["processing_time"] > 0

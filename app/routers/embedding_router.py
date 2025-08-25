@@ -1,8 +1,8 @@
 """
 🚀 Apple MLX Embedding Router: Text to Vectors at Light Speed
 
-This router transforms your text into high-dimensional embeddings using the power 
-of Apple Silicon and MLX. Every request is a demonstration of what's possible 
+This router transforms your text into high-dimensional embeddings using the power
+of Apple Silicon and MLX. Every request is a demonstration of what's possible
 when cutting-edge AI meets Apple's unified memory architecture.
 
 ⚡ Performance Highlights:
@@ -53,14 +53,13 @@ async def get_backend_manager() -> BackendManager:
 async def get_embedding_service(manager: BackendManager = Depends(get_backend_manager)) -> EmbeddingService:
     """
     🧠 Embedding Service Dependency: Your Gateway to Apple Silicon AI
-    
-    This dependency ensures our MLX backend is ready and provides access 
+
+    This dependency ensures our MLX backend is ready and provides access
     to the embedding service that orchestrates the text-to-vector magic.
     """
     if not manager.is_ready():
         raise HTTPException(
-            status_code=503, 
-            detail="Apple MLX backend warming up - please wait for model initialization"
+            status_code=503, detail="Apple MLX backend warming up - please wait for model initialization"
         )
     return EmbeddingService(manager)
 
@@ -69,20 +68,20 @@ async def get_embedding_service(manager: BackendManager = Depends(get_backend_ma
 async def generate_embeddings(request: EmbedRequest, service: EmbeddingService = Depends(get_embedding_service)):
     """
     🚀 Generate Text Embeddings: Apple Silicon AI in Action
-    
+
     Transform your text into high-dimensional semantic vectors using Apple MLX!
-    This endpoint showcases the incredible speed of Apple Silicon unified memory 
+    This endpoint showcases the incredible speed of Apple Silicon unified memory
     architecture with sub-millisecond embedding generation.
-    
+
     ✨ What happens here:
     - Text tokenization optimized for Apple Silicon
     - MLX-accelerated model inference through unified memory
     - 320-dimensional vector generation in <1ms
     - Automatic normalization for cosine similarity
-    
+
     🎯 Perfect for:
     - Semantic search applications
-    - Document similarity analysis  
+    - Document similarity analysis
     - RAG (Retrieval Augmented Generation) systems
     - Real-time content recommendations
 
@@ -125,14 +124,14 @@ async def generate_embeddings(request: EmbedRequest, service: EmbeddingService =
 async def get_embedding_info(service: EmbeddingService = Depends(get_embedding_service)):
     """
     📊 Apple MLX Embedding Service Information
-    
+
     Get detailed information about our Apple Silicon-powered embedding service.
-    Perfect for monitoring performance, checking model details, and understanding 
+    Perfect for monitoring performance, checking model details, and understanding
     the incredible capabilities of MLX on Apple Silicon.
-    
+
     Returns comprehensive metrics including:
     - Model information and architecture details
-    - Apple Silicon performance characteristics  
+    - Apple Silicon performance characteristics
     - MLX framework version and capabilities
     - Current service status and health
 
@@ -141,12 +140,12 @@ async def get_embedding_info(service: EmbeddingService = Depends(get_embedding_s
     """
     try:
         info = await service.get_service_info()
-        
+
         # 🚀 Add Apple MLX branding to the response
         info["powered_by"] = "Apple MLX Framework"
         info["optimized_for"] = "Apple Silicon"
         info["community"] = "Apple MLX Community"
-        
+
         return info
 
     except Exception as e:

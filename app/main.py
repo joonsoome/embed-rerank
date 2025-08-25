@@ -1,12 +1,12 @@
 """
 🚀 Apple MLX-Powered Embedding & Reranking API
 
-Built for the Apple Silicon revolution. This FastAPI service harnesses the raw power 
-of Apple's MLX framework to deliver lightning-fast text embeddings and document 
+Built for the Apple Silicon revolution. This FastAPI service harnesses the raw power
+of Apple's MLX framework to deliver lightning-fast text embeddings and document
 reranking with unprecedented efficiency on Apple Silicon.
 
 ✨ What makes this special:
-- 🧠 Apple MLX: Native Apple Silicon acceleration 
+- 🧠 Apple MLX: Native Apple Silicon acceleration
 - ⚡ Sub-millisecond inference: Because speed matters
 - 🔋 Unified Memory: Leveraging Apple's architecture magic
 - 🎯 Production-Ready: Built for real-world ML workloads
@@ -42,11 +42,11 @@ startup_time = None
 async def lifespan(app: FastAPI):
     """
     🚀 Application Lifespan: The MLX Initialization Journey
-    
+
     This is where the magic happens! We initialize our Apple MLX backend,
-    load the embedding model into unified memory, and prepare for 
+    load the embedding model into unified memory, and prepare for
     sub-millisecond inference that would make even Apple engineers smile.
-    
+
     The lifespan pattern ensures our MLX model is ready before any requests
     arrive, delivering that instant-on experience Apple Silicon deserves.
     """
@@ -122,7 +122,7 @@ app.add_middleware(
 async def logging_middleware(request: Request, call_next):
     """
     📊 Request Logging Middleware: MLX Performance Monitoring
-    
+
     Every request tells a story of Apple Silicon performance. We track timing,
     add performance headers, and log the journey through our MLX-powered pipeline.
     This helps us optimize and showcase the incredible speed of Apple Silicon + MLX.
@@ -162,11 +162,11 @@ async def logging_middleware(request: Request, call_next):
         processing_time = time.time() - start_time
 
         logger.error(
-            "💥 MLX request failed", 
-            method=request.method, 
-            url=str(request.url), 
-            error=str(e), 
-            processing_time=processing_time
+            "💥 MLX request failed",
+            method=request.method,
+            url=str(request.url),
+            error=str(e),
+            processing_time=processing_time,
         )
 
         raise
@@ -176,7 +176,7 @@ async def logging_middleware(request: Request, call_next):
 async def get_backend_manager() -> BackendManager:
     """
     🎯 Dependency Provider: Access to Apple MLX Backend Manager
-    
+
     This is how our endpoints connect to the MLX magic! The backend manager
     orchestrates our Apple Silicon-powered embedding and reranking operations.
     """
@@ -190,7 +190,7 @@ async def get_backend_manager() -> BackendManager:
 async def global_exception_handler(request: Request, exc: Exception):
     """
     🛡️ Global Exception Handler: Protecting the MLX Experience
-    
+
     Even when things go wrong, we maintain the Apple standard of excellence.
     Every error is logged with context and presented gracefully to users.
     """
@@ -217,23 +217,19 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def http_exception_handler(request: Request, exc: HTTPException):
     """
     🔧 HTTP Exception Handler: Clean API Error Responses
-    
+
     Structured error responses that maintain API consistency while providing
     helpful debugging information for developers using our MLX-powered service.
     """
     logger.warning(
-        "⚠️ MLX API error", 
-        method=request.method, 
-        url=str(request.url), 
-        status_code=exc.status_code, 
-        detail=exc.detail
+        "⚠️ MLX API error", method=request.method, url=str(request.url), status_code=exc.status_code, detail=exc.detail
     )
 
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "error": "api_error", 
-            "detail": exc.detail, 
+            "error": "api_error",
+            "detail": exc.detail,
             "status_code": exc.status_code,
             "powered_by": "Apple-MLX",
         },
@@ -242,8 +238,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 # 🛣️ Router Registration: MLX-Powered API Endpoints
 app.include_router(
-    health_router.router, 
-    responses={503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"}}
+    health_router.router, responses={503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"}}
 )
 
 app.include_router(
@@ -285,7 +280,7 @@ app.include_router(
 async def root():
     """
     🏠 Root Endpoint: Welcome to the Apple MLX Experience
-    
+
     This is your gateway to Apple Silicon-powered embeddings and reranking.
     Get a quick overview of our MLX-accelerated capabilities and service status.
     """
@@ -299,15 +294,15 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "endpoints": {
-            "embed": "/api/v1/embed", 
-            "rerank": "/api/v1/rerank", 
+            "embed": "/api/v1/embed",
+            "rerank": "/api/v1/rerank",
             "health": "/health",
             "openai_embeddings": "/v1/embeddings",
             "openai_models": "/v1/models",
             "openai_health": "/v1/health",
             "tei_embed": "/embed",
             "tei_rerank": "/rerank",
-            "tei_info": "/info"
+            "tei_info": "/info",
         },
         "backend": backend_manager.backend.__class__.__name__ if backend_manager else "initializing",
         "status": "🚀 ready" if backend_manager and backend_manager.is_ready() else "🔄 initializing",

@@ -13,6 +13,7 @@ from ..models.responses import RerankResponse, ErrorResponse
 from ..services.reranking_service import RerankingService
 from ..backends.base import BackendManager
 
+
 def json_encoder(obj):
     """Custom JSON encoder for datetime objects."""
     if isinstance(obj, datetime):
@@ -83,10 +84,10 @@ async def rerank_passages(request: RerankRequest, service: RerankingService = De
         # Perform reranking using the service
         response = await service.rerank_passages(request)
 
-                # Convert to dict and filter None values
+        # Convert to dict and filter None values
         response_dict = response.model_dump()
         filtered_response = filter_none_values(response_dict)
-        
+
         # Create JSON with custom encoder for datetime
         json_content = json.dumps(filtered_response, default=json_encoder)
         return JSONResponse(content=json.loads(json_content))
