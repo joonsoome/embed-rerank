@@ -7,7 +7,7 @@ import platform
 from pathlib import Path
 from typing import Literal, Optional, List
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings
 
 
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     @field_validator("backend")
     @classmethod
-    def validate_backend(cls, v):
+    def validate_backend(cls, v: str) -> str:
         """Auto-detect best backend if set to 'auto'."""
         if v == "auto":
             # Check if we're on Apple Silicon
@@ -67,18 +67,15 @@ class Settings(BaseSettings):
 
     @field_validator("mlx_model_path")
     @classmethod
-    def validate_mlx_path(cls, v, info):
+    def validate_mlx_path(cls, v: Optional[Path], info: ValidationInfo) -> Optional[Path]:  # type: ignore[override]
         """Validate MLX model path if specified."""
-        if v is not None:
-            if not isinstance(v, Path):
-                v = Path(v)
-            if not v.exists():
-                raise ValueError(f"MLX model path does not exist: {v}")
+        if v is not None and not v.exists():
+            raise ValueError(f"MLX model path does not exist: {v}")
         return v
 
     @field_validator("batch_size", "max_batch_size")
     @classmethod
-    def validate_batch_sizes(cls, v):
+    def validate_batch_sizes(cls, v: int) -> int:
         """Ensure batch sizes are positive."""
         if v <= 0:
             raise ValueError("Batch size must be positive")
@@ -86,7 +83,7 @@ class Settings(BaseSettings):
 
     @field_validator("device_memory_fraction")
     @classmethod
-    def validate_memory_fraction(cls, v):
+    def validate_memory_fraction(cls, v: float) -> float:
         """Ensure memory fraction is between 0 and 1."""
         if not 0.0 < v <= 1.0:
             raise ValueError("Device memory fraction must be between 0 and 1")
@@ -94,7 +91,7 @@ class Settings(BaseSettings):
 
     @field_validator("log_level")
     @classmethod
-    def validate_log_level(cls, v):
+    def validate_log_level(cls, v: str) -> str:
         """Validate log level."""
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if v.upper() not in valid_levels:
@@ -105,6 +102,11 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_prefix = ""
         case_sensitive = False
+    # Allow unknown environment variables so adding extra operational
+    # settings in .env (e.g., debug, enable_cors, metrics_port) does not
+    # trigger ValidationError. They will simply be ignored unless
+    # explicitly defined as model fields.
+    extra = "ignore"
 
 
 # Global settings instance
