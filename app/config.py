@@ -56,6 +56,7 @@ class Settings(BaseSettings):
             if platform.system() == "Darwin" and platform.machine() == "arm64":
                 try:
                     import mlx.core  # noqa: F401
+
                     return "mlx"
                 except ImportError:
                     return "torch"
