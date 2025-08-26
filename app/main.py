@@ -26,8 +26,7 @@ from .backends.base import BackendManager
 from .backends.factory import BackendFactory
 from .config import settings
 from .models.responses import ErrorResponse
-from .routers import (embedding_router, health_router, openai_router,
-                      reranking_router, tei_router)
+from .routers import embedding_router, health_router, openai_router, reranking_router, tei_router
 from .utils.logger import setup_logging
 
 # 🧠 Neural network powered by Apple Silicon magic

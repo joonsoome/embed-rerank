@@ -3,8 +3,7 @@ Pydantic models for the embedding and reranking API.
 """
 
 from .requests import EmbedRequest, RerankRequest
-from .responses import (EmbeddingVector, EmbedResponse, ErrorResponse,
-                        HealthResponse, ModelInfo, ModelsResponse,
+from .responses import (EmbeddingVector, EmbedResponse, ErrorResponse, HealthResponse, ModelInfo, ModelsResponse,
                         RerankResponse, RerankResult)
 
 __all__ = [
