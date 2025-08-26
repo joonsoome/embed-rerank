@@ -7,7 +7,7 @@ name = "embed-rerank"
 dynamic = ["version"]
 description = "Single Model Embedding & Reranker API with Apple Silicon acceleration"
 readme = "README.md"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.13"
 license = "MIT"
 keywords = ["embeddings", "reranking", "fastapi", "mlx", "apple-silicon"]
 authors = [
@@ -15,10 +15,6 @@ authors = [
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: Implementation :: CPython",
   "Framework :: FastAPI",
@@ -96,7 +92,7 @@ cov = [
 ]
 
 [[tool.hatch.envs.all.matrix]]
-python = ["3.10", "3.11", "3.12", "3.13"]
+python = ["3.13"]
 
 [tool.hatch.envs.lint]
 detached = true
@@ -122,12 +118,12 @@ all = [
 ]
 
 [tool.black]
-target-version = ["py310"]
+target-version = ["py313"]
 line-length = 120
 skip-string-normalization = true
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py313"
 line-length = 120
 select = [
   "A",
@@ -208,7 +204,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 ignore_errors = true
 ignore_missing_imports = true
 follow_imports = "skip"
