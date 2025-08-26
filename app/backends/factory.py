@@ -137,7 +137,7 @@ class BackendFactory:
         """
         try:
             # Try to create the backend (without loading the model)
-            backend = BackendFactory.create_backend(backend_type, model_name)
+            BackendFactory.create_backend(backend_type, model_name)
             return True
         except Exception as e:
             logger.warning(

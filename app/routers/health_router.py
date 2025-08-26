@@ -4,7 +4,6 @@ Health check router for monitoring system status.
 
 import datetime
 import time
-from typing import Any, Dict
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException

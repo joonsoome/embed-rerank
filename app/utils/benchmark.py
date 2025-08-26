@@ -5,11 +5,8 @@ Backend performance benchmarking tool.
 import asyncio
 import statistics
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import numpy as np
-
-from app.backends.base import BaseBackend
 from app.backends.factory import BackendFactory
 from app.utils.logger import setup_logging
 
@@ -105,7 +102,7 @@ class BackendBenchmark:
                 passage_embs = result.vectors[1:]
 
                 start_time = time.time()
-                similarities = await backend.compute_similarity(query_emb, passage_embs)
+                await backend.compute_similarity(query_emb, passage_embs)
                 end_time = time.time()
 
                 similarity_times.append(end_time - start_time)
@@ -153,7 +150,7 @@ class BackendBenchmark:
             backend = self.backend
 
         start = time.time()
-        result = await backend.embed_texts(texts, batch_size=batch_size)
+        await backend.embed_texts(texts, batch_size=batch_size)
         processing_time = time.time() - start
 
         throughput = len(texts) / processing_time if processing_time > 0 else float('inf')
@@ -272,7 +269,7 @@ class BackendBenchmark:
                 print(f"   Best latency: {optimal_result['mean_time']:.3f}s")
 
         if "comparison" in results and results["comparison"]:
-            print(f"\n🏆 COMPARISON:")
+            print("\n🏆 COMPARISON:")
             comp = results["comparison"]
             print(f"   Fastest loading: {comp['load_time']['fastest']}")
             print(f"   Fastest inference: {comp['inference_speed']['fastest']}")
@@ -298,12 +295,12 @@ async def run_benchmark():
     available_backends = []
     try:
         available_backends.append("torch")
-    except:
+    except Exception:
         pass
 
     try:
         available_backends.append("mlx")
-    except:
+    except Exception:
         pass
 
     if available_backends:

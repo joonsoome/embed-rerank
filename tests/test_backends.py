@@ -8,9 +8,7 @@ This module contains comprehensive tests for all backend implementations:
 - Backend Manager functionality
 """
 
-import asyncio
 import platform
-from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest

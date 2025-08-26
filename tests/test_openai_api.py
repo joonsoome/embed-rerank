@@ -292,9 +292,6 @@ class TestOpenAIRateLimiting:
         response = client.post("/v1/embeddings", json={"input": "Test rate limits", "model": "text-embedding-ada-002"})
 
         # Check for common rate limit headers (optional)
-        headers = response.headers
-        rate_limit_headers = ["x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset", "retry-after"]
-
         # These headers are optional - just check response is valid
         assert response.status_code in [200, 429, 503]
 

@@ -291,7 +291,7 @@ class TestPerformanceBenchmarks:
             min_time = min(times)
             max_time = max(times)
 
-            print(f"\nSingle text embedding performance:")
+            print("\nSingle text embedding performance:")
             print(f"  Average: {avg_time:.3f}s")
             print(f"  Min: {min_time:.3f}s")
             print(f"  Max: {max_time:.3f}s")
@@ -454,7 +454,7 @@ class TestSystemIntegration:
         success_count = sum(1 for _, status, _ in request_results if status == 200)
         error_count = sum(1 for _, status, _ in request_results if status >= 400)
 
-        print(f"\nConcurrent request results:")
+        print("\nConcurrent request results:")
         print(f"  Total requests: {num_requests}")
         print(f"  Successful: {success_count}")
         print(f"  Errors: {error_count}")

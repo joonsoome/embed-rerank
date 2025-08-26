@@ -34,9 +34,7 @@ try:
     import os
 
     import mlx.core as mx
-    import mlx.nn as nn
     from huggingface_hub import snapshot_download
-    from transformers import AutoTokenizer
 
     MLX_AVAILABLE = True
     logger.info("🚀 MLX modules successfully imported - Apple Silicon detected!")

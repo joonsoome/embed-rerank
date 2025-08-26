@@ -55,8 +55,7 @@ class Settings(BaseSettings):
             # Check if we're on Apple Silicon
             if platform.system() == "Darwin" and platform.machine() == "arm64":
                 try:
-                    import mlx.core
-
+                    import mlx.core  # noqa: F401
                     return "mlx"
                 except ImportError:
                     return "torch"

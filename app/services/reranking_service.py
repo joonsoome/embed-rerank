@@ -5,11 +5,11 @@ Reranking service for query-document relevance scoring.
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.backends.base import BackendManager
 from app.models.requests import RerankRequest
-from app.models.responses import ErrorResponse, RerankResponse, RerankResult
+from app.models.responses import RerankResponse, RerankResult
 
 logger = logging.getLogger(__name__)
 

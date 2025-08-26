@@ -1,5 +1,12 @@
 """
-🚀 Hugging Face TEI (Text Embeddings Inference) Compatible Router
+🚀 Hugging import time
+from typing import Any, Dict, List, Optional, Union
+
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+
+from app.backends.base import BackendManager, get_backend_manager (Text Embeddings Inference) Compatible Router
 
 This router provides seamless compatibility with Hugging Face TEI API endpoints
 while leveraging the raw power of Apple's MLX framework. Drop-in replacement
@@ -340,7 +347,10 @@ async def tei_predict(
 
     raise HTTPException(
         status_code=501,
-        detail="Sequence classification not implemented. This service focuses on embeddings and reranking. Use /embed for embeddings or /rerank for document reranking.",
+        detail=(
+            "Sequence classification not implemented. This service focuses on embeddings and reranking. "
+            "Use /embed for embeddings or /rerank for document reranking."
+        ),
     )
 
 

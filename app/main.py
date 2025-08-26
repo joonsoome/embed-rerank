@@ -14,12 +14,10 @@ reranking with unprecedented efficiency on Apple Silicon.
 Join the Apple MLX community in pushing the boundaries of on-device AI!
 """
 
-import asyncio
 import time
 from contextlib import asynccontextmanager
 
-import structlog
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse

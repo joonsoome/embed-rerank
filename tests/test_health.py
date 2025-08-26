@@ -135,7 +135,7 @@ class TestHealthMonitoring:
 
         for _ in range(10):
             start_time = time.time()
-            response = client.get("/health/")
+            client.get("/health/")
             end_time = time.time()
 
             response_time = end_time - start_time
@@ -149,7 +149,7 @@ class TestHealthMonitoring:
         min_time = min(times)
         max_time = max(times)
 
-        print(f"\nHealth check performance:")
+        print("\nHealth check performance:")
         print(f"  Average: {avg_time:.3f}s")
         print(f"  Min: {min_time:.3f}s")
         print(f"  Max: {max_time:.3f}s")
@@ -440,7 +440,7 @@ class TestHealthMetrics:
         max_response_time = max(response_times)
         min_response_time = min(response_times)
 
-        print(f"\nConcurrent health check performance:")
+        print("\nConcurrent health check performance:")
         print(f"  Total time: {total_time:.3f}s")
         print(f"  Average response time: {avg_response_time:.3f}s")
         print(f"  Max response time: {max_response_time:.3f}s")

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from app.backends.base import BackendManager
 from app.models.requests import EmbedRequest
-from app.models.responses import EmbeddingVector, EmbedResponse, ErrorResponse
+from app.models.responses import EmbeddingVector, EmbedResponse
 
 logger = logging.getLogger(__name__)
 

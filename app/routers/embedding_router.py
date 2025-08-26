@@ -14,8 +14,6 @@ when cutting-edge AI meets Apple's unified memory architecture.
 Join the Apple MLX community in revolutionizing on-device AI!
 """
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..backends.base import BackendManager
