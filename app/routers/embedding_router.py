@@ -14,13 +14,14 @@ when cutting-edge AI meets Apple's unified memory architecture.
 Join the Apple MLX community in revolutionizing on-device AI!
 """
 
-from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 
+from fastapi import APIRouter, Depends, HTTPException
+
+from ..backends.base import BackendManager
 from ..models.requests import EmbedRequest
 from ..models.responses import EmbedResponse, ErrorResponse
 from ..services.embedding_service import EmbeddingService
-from ..backends.base import BackendManager
 
 # 🎯 Apple MLX Embedding Router Configuration
 router = APIRouter(
@@ -111,7 +112,7 @@ async def generate_embeddings(request: EmbedRequest, service: EmbeddingService =
         # Convert to dict and add backward-compatible fields expected by tests
         response_dict = response.model_dump()
         response_dict["num_texts"] = len(response.embeddings)
-        
+
         return response_dict
 
     except ValueError as e:

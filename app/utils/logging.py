@@ -2,8 +2,8 @@
 Logging configuration using structlog.
 """
 
-import sys
 import logging
+import sys
 from typing import Any
 
 import structlog

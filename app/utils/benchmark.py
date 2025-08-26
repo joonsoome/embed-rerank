@@ -3,13 +3,14 @@ Backend performance benchmarking tool.
 """
 
 import asyncio
-import time
 import statistics
-from typing import List, Dict, Any, Optional
+import time
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
-from app.backends.factory import BackendFactory
 from app.backends.base import BaseBackend
+from app.backends.factory import BackendFactory
 from app.utils.logger import setup_logging
 
 logger = setup_logging()
@@ -35,7 +36,7 @@ class BackendBenchmark:
             self.model_name = backend_or_model
 
     async def benchmark_backend(
-    self, backend_type: str, test_texts: List[str], iterations: int = 3, batch_sizes: List[int] = [1, 8, 16, 32]
+        self, backend_type: str, test_texts: List[str], iterations: int = 3, batch_sizes: List[int] = [1, 8, 16, 32]
     ) -> Dict[str, Any]:
         """
         Benchmark a specific backend.

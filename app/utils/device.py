@@ -15,7 +15,7 @@ Welcome to the future of on-device AI, powered by Apple's revolutionary silicon!
 """
 
 import platform
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 def detect_optimal_device() -> Dict[str, Any]:

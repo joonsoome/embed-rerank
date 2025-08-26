@@ -18,24 +18,25 @@ Welcome to the future of on-device AI, powered by Apple's vision and MLX magic!
 
 import asyncio
 import time
-from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .base import BaseBackend, EmbeddingResult
 from ..utils.logger import setup_logging
+from .base import BaseBackend, EmbeddingResult
 
 logger = setup_logging()
 
 # 🔮 MLX Import Magic: Conditional loading for Apple Silicon detection
 try:
-    import mlx.core as mx
-    import mlx.nn as nn
-    from transformers import AutoTokenizer
-    from huggingface_hub import snapshot_download
     import json
     import os
+
+    import mlx.core as mx
+    import mlx.nn as nn
+    from huggingface_hub import snapshot_download
+    from transformers import AutoTokenizer
 
     MLX_AVAILABLE = True
     logger.info("🚀 MLX modules successfully imported - Apple Silicon detected!")

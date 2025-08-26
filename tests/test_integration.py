@@ -8,9 +8,10 @@ This module contains end-to-end integration tests that verify:
 - Multi-format API interoperability
 """
 
-import pytest
 import asyncio
 import time
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -128,8 +129,8 @@ class TestRealBackendIntegration:
     @pytest.mark.asyncio
     async def test_backend_initialization(self):
         """Test backend initialization process."""
-        from app.backends.factory import BackendFactory
         from app.backends.base import BackendManager
+        from app.backends.factory import BackendFactory
 
         # Test backend creation
         backend = BackendFactory.create_backend("auto")
@@ -411,8 +412,8 @@ class TestSystemIntegration:
 
     def test_concurrent_request_handling(self, client):
         """Test system behavior under concurrent load."""
-        import threading
         import queue
+        import threading
 
         results = queue.Queue()
 

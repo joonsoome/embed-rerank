@@ -2,14 +2,14 @@
 Embedding service for text vectorization operations.
 """
 
-import time
 import logging
-from typing import List, Dict, Any, Optional
+import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from app.models.requests import EmbedRequest
-from app.models.responses import EmbedResponse, EmbeddingVector, ErrorResponse
 from app.backends.base import BackendManager
+from app.models.requests import EmbedRequest
+from app.models.responses import EmbeddingVector, EmbedResponse, ErrorResponse
 
 logger = logging.getLogger(__name__)
 

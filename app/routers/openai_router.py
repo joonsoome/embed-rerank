@@ -16,10 +16,11 @@ Transform your OpenAI embeddings workflow into an Apple Silicon powerhouse!
 """
 
 import time
-from typing import List, Optional, Union, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Union
+
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from ..backends.base import BackendManager
 from ..models.requests import EmbedRequest

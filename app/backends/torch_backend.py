@@ -4,16 +4,16 @@ PyTorch-based embedding backend with MPS support.
 
 import asyncio
 import time
-import numpy as np
-from typing import Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List
 
+import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-from .base import BaseBackend, EmbeddingResult
 from ..utils.device import get_optimal_torch_device
 from ..utils.logger import setup_logging
+from .base import BaseBackend, EmbeddingResult
 
 logger = setup_logging()
 
@@ -244,7 +244,7 @@ class TorchBackend(BaseBackend):
 
                 vm = psutil.virtual_memory()
                 info["available_memory"] = vm.available
-                info["available_memory_gb"] = round(vm.available / (1024 ** 3), 2)
+                info["available_memory_gb"] = round(vm.available / (1024**3), 2)
             except Exception:
                 # Best-effort only
                 pass

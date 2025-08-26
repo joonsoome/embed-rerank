@@ -2,16 +2,17 @@
 Reranking router for document reranking operations.
 """
 
+import json
+from datetime import datetime
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from typing import List
-from datetime import datetime
-import json
 
-from ..models.requests import RerankRequest
-from ..models.responses import RerankResponse, ErrorResponse
-from ..services.reranking_service import RerankingService
 from ..backends.base import BackendManager
+from ..models.requests import RerankRequest
+from ..models.responses import ErrorResponse, RerankResponse
+from ..services.reranking_service import RerankingService
 
 
 def json_encoder(obj):

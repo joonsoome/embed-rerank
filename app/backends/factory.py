@@ -2,15 +2,15 @@
 Backend factory for creating appropriate embedding backends.
 """
 
-from typing import Optional
 import platform
+from typing import Optional
 
 from app.backends.base import BaseBackend
+from app.backends.mlx_backend import MLX_AVAILABLE, MLXBackend
 from app.backends.torch_backend import TorchBackend
-from app.backends.mlx_backend import MLXBackend, MLX_AVAILABLE
+from app.config import settings
 from app.utils.device import detect_optimal_device
 from app.utils.logger import setup_logging
-from app.config import settings
 
 logger = setup_logging()
 

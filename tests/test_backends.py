@@ -9,15 +9,16 @@ This module contains comprehensive tests for all backend implementations:
 """
 
 import asyncio
-import pytest
 import platform
-import numpy as np
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
+import pytest
+
+from app.backends.base import BackendManager
 from app.backends.factory import BackendFactory
 from app.backends.mlx_backend import MLX_AVAILABLE
 from app.backends.torch_backend import TorchBackend
-from app.backends.base import BackendManager
 from app.utils.benchmark import BackendBenchmark
 
 

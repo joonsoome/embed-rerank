@@ -4,9 +4,9 @@ Configuration management for the embed-rerank API.
 
 import platform
 from pathlib import Path
-from typing import Literal, Optional, List
+from typing import List, Literal, Optional
 
-from pydantic import Field, field_validator, ValidationInfo
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

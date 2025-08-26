@@ -2,14 +2,15 @@
 Health check router for monitoring system status.
 """
 
-import time
 import datetime
+import time
+from typing import Any, Dict
+
 import psutil
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any
 
-from ..models.responses import HealthResponse, ErrorResponse
 from ..backends.base import BackendManager
+from ..models.responses import ErrorResponse, HealthResponse
 
 router = APIRouter(
     prefix="/health",
@@ -65,7 +66,7 @@ async def health_check(manager: BackendManager = Depends(get_backend_manager)):
         # Top-level service information
         service_info = {
             "name": "embed-rerank",
-            "version": "1.0.0", 
+            "version": "1.0.0",
             "description": "Embedding & reranking service",
         }
 
