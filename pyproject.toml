@@ -74,6 +74,9 @@ embed-rerank = "app.main:main"
 [tool.hatch.version]
 path = "app/__init__.py"
 
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
 [tool.hatch.envs.default]
 dependencies = [
   "coverage[toml]>=6.5",
