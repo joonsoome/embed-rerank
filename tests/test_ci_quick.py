@@ -26,7 +26,7 @@ class TestQuickCI:
         response = client.get("/health/")
         # In CI without backend initialization, expect 503
         assert response.status_code in [200, 503]
-        
+
         data = response.json()
         # Check for either proper health response or error response
         assert "status" in data or "error" in data
@@ -35,7 +35,7 @@ class TestQuickCI:
         """Test root endpoint"""
         response = client.get("/")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "name" in data
         assert "version" in data
@@ -45,7 +45,7 @@ class TestQuickCI:
         """Test OpenAPI documentation endpoint"""
         response = client.get("/openapi.json")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "openapi" in data
         assert "info" in data
