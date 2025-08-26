@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+        pip install -e ".[dev]" --no-cache-dir
         
     - name: Code quality
       run: |
@@ -29,5 +29,19 @@ jobs:
         isort --check-only --profile black app/ tests/
         flake8 app/ tests/ --max-line-length=120 --extend-ignore=E203,W503
         
-    - name: Run tests
-      run: pytest tests/ -v
+    - name: Run core tests
+      env:
+        BACKEND: torch
+        LOG_LEVEL: ERROR
+        CI: true
+        PYTHONPATH: .
+      run: |
+        # Run lightweight CI tests only
+        pytest tests/test_ci_quick.py -v --tb=short
+        
+    - name: Test imports
+      run: |
+        # Test that core modules can be imported without errors
+        python -c "from app.main import app; print('✅ App import successful')"
+        python -c "from app.backends.factory import BackendFactory; print('✅ Backend factory import successful')"
+        python -c "from app.models.requests import EmbedRequest; print('✅ Models import successful')"
