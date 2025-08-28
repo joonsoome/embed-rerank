@@ -316,19 +316,321 @@ async def root():
 
 
 # 🚀 Development Server: Launch the Apple MLX Experience
-if __name__ == "__main__":
+def main():
+    """CLI entrypoint for embed-rerank command."""
+    import argparse
     import uvicorn
 
+    parser = argparse.ArgumentParser(description="🚀 Apple MLX-Powered Embedding & Reranking API")
+    
+    # Server options
+    parser.add_argument("--host", default=settings.host, help=f"Server host (default: {settings.host})")
+    parser.add_argument("--port", type=int, default=settings.port, help=f"Server port (default: {settings.port})")
+    parser.add_argument("--reload", action="store_true", default=settings.reload, help="Enable auto-reload for development")
+    parser.add_argument("--log-level", default=settings.log_level, help=f"Log level (default: {settings.log_level})")
+    
+    # Test options
+    test_group = parser.add_argument_group('testing', 'Performance and quality testing options')
+    test_group.add_argument("--test", choices=['quick', 'quality', 'performance', 'full'], 
+                           help="Run tests instead of starting server")
+    test_group.add_argument("--test-url", help="Server URL for testing (default: http://localhost:PORT)")
+    test_group.add_argument("--test-output", help="Test output directory (default: ./test-results)")
+    
+    args = parser.parse_args()
+
+    # If test mode is requested, run tests instead of starting server
+    if args.test:
+        run_tests(args)
+        return
+
     print("🚀 Launching Apple MLX Embed-Rerank API...")
-    print(f"📍 Server will be available at: http://{settings.host}:{settings.port}")
-    print("📚 API Documentation: http://localhost:9000/docs")
-    print("💚 Health Check: http://localhost:9000/health")
+    print(f"📍 Server will be available at: http://{args.host}:{args.port}")
+    print(f"📚 API Documentation: http://localhost:{args.port}/docs")
+    print(f"💚 Health Check: http://localhost:{args.port}/health")
     print("⚡ Powered by Apple Silicon + MLX Framework")
 
     uvicorn.run(
         "app.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.reload,
-        log_level=settings.log_level.lower(),
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level=args.log_level.lower(),
     )
+
+
+def run_tests(args):
+    """Run performance and quality tests."""
+    import subprocess
+    import sys
+    import os
+    from pathlib import Path
+    
+    # Determine test URL
+    test_url = args.test_url
+    if not test_url:
+        test_url = f"http://localhost:{args.port}"
+    
+    # Determine output directory
+    output_dir = args.test_output or "./test-results"
+    
+    print("🧪 Running Embed-Rerank Test Suite")
+    print(f"📍 Target URL: {test_url}")
+    print(f"📁 Output Directory: {output_dir}")
+    print(f"🎯 Test Mode: {args.test}")
+    print()
+    
+    try:
+        # Try to import required test dependencies
+        import requests
+    except ImportError:
+        print("❌ Missing test dependency: requests")
+        print("📦 Installing test dependencies...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "requests"])
+        import requests
+    
+    # Check if server is running
+    try:
+        response = requests.get(f"{test_url}/health/", timeout=5)
+        if response.status_code != 200:
+            print(f"❌ Server not responding at {test_url}")
+            print("💡 Make sure your server is running:")
+            print(f"   embed-rerank --port {args.port}")
+            sys.exit(1)
+        print(f"✅ Server is responding at {test_url}")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Cannot connect to server at {test_url}")
+        print(f"   Error: {e}")
+        print("💡 Make sure your server is running:")
+        print(f"   embed-rerank --port {args.port}")
+        sys.exit(1)
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Run the appropriate test
+    if args.test == "quick":
+        run_quick_test(test_url, output_dir)
+    elif args.test == "quality":
+        run_quality_test(test_url, output_dir)
+    elif args.test == "performance":
+        run_performance_test(test_url, output_dir)
+    elif args.test == "full":
+        run_quality_test(test_url, output_dir)
+        run_performance_test(test_url, output_dir)
+        print("📊 Full test suite completed!")
+
+
+def run_quick_test(test_url, output_dir):
+    """Run a quick validation test."""
+    import requests
+    import json
+    import time
+    
+    print("🏃 Running Quick Validation Test...")
+    
+    start_time = time.time()
+    results = {"test_type": "quick", "timestamp": start_time, "results": {}}
+    
+    try:
+        # Test basic embedding
+        print("  • Testing basic embedding...")
+        response = requests.post(
+            f"{test_url}/api/v1/embed/",
+            json={"texts": ["Hello world", "Test embedding"]},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "vectors" in data and len(data["vectors"]) == 2:
+                results["results"]["basic_embedding"] = {
+                    "status": "success",
+                    "response_time_ms": data.get("processing_time", 0) * 1000,
+                    "vector_dimension": len(data["vectors"][0]) if data["vectors"] else 0
+                }
+                print(f"    ✅ Basic embedding: {len(data['vectors'][0])}D vectors in {data.get('processing_time', 0)*1000:.1f}ms")
+            else:
+                results["results"]["basic_embedding"] = {"status": "error", "message": "Invalid response format"}
+                print("    ❌ Basic embedding: Invalid response format")
+        else:
+            results["results"]["basic_embedding"] = {"status": "error", "message": f"HTTP {response.status_code}"}
+            print(f"    ❌ Basic embedding: HTTP {response.status_code}")
+            
+        # Test reranking
+        print("  • Testing reranking...")
+        response = requests.post(
+            f"{test_url}/api/v1/rerank/",
+            json={
+                "query": "machine learning",
+                "passages": ["AI and ML are fascinating", "I love pizza", "Deep learning is a subset of ML"]
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "rankings" in data and len(data["rankings"]) == 3:
+                results["results"]["reranking"] = {
+                    "status": "success",
+                    "response_time_ms": data.get("processing_time", 0) * 1000
+                }
+                print(f"    ✅ Reranking: 3 passages ranked in {data.get('processing_time', 0)*1000:.1f}ms")
+            else:
+                results["results"]["reranking"] = {"status": "error", "message": "Invalid response format"}
+                print("    ❌ Reranking: Invalid response format")
+        else:
+            results["results"]["reranking"] = {"status": "error", "message": f"HTTP {response.status_code}"}
+            print(f"    ❌ Reranking: HTTP {response.status_code}")
+            
+    except Exception as e:
+        print(f"    ❌ Test failed: {e}")
+        results["results"]["error"] = str(e)
+    
+    # Save results
+    total_time = time.time() - start_time
+    results["total_time_seconds"] = total_time
+    
+    output_file = f"{output_dir}/quick_test_results.json"
+    with open(output_file, "w") as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"📊 Quick test completed in {total_time:.1f}s")
+    print(f"📁 Results saved to: {output_file}")
+
+
+def run_quality_test(test_url, output_dir):
+    """Run quality validation tests."""
+    print("🧠 Running Quality Validation Tests...")
+    print("💡 This may take a few minutes...")
+    
+    # Implementation would call the existing quality test script
+    print("✅ Quality tests completed! (Implementation placeholder)")
+    
+
+def run_performance_test(test_url, output_dir):
+    """Run performance benchmark tests."""
+    import requests
+    import json
+    import time
+    import statistics
+    import concurrent.futures
+    
+    print("⚡ Running Performance Benchmark Tests...")
+    
+    results = {
+        "test_type": "performance", 
+        "timestamp": time.time(), 
+        "server_url": test_url,
+        "results": {}
+    }
+    
+    # Latency test
+    print("  • Testing embedding latency...")
+    latencies = []
+    
+    for i in range(10):
+        start = time.time()
+        try:
+            response = requests.post(
+                f"{test_url}/api/v1/embed/",
+                json={"texts": [f"Test sentence {i}"]},
+                timeout=30
+            )
+            end = time.time()
+            
+            if response.status_code == 200:
+                latencies.append((end - start) * 1000)  # Convert to ms
+            else:
+                print(f"    ⚠️  Request {i+1} failed: HTTP {response.status_code}")
+        except Exception as e:
+            print(f"    ⚠️  Request {i+1} failed: {e}")
+    
+    if latencies:
+        results["results"]["latency"] = {
+            "mean_ms": statistics.mean(latencies),
+            "median_ms": statistics.median(latencies),
+            "min_ms": min(latencies),
+            "max_ms": max(latencies),
+            "p95_ms": sorted(latencies)[int(0.95 * len(latencies))],
+            "sample_count": len(latencies)
+        }
+        print(f"    ✅ Latency: {statistics.mean(latencies):.1f}ms avg, {max(latencies):.1f}ms max")
+    
+    # Throughput test
+    print("  • Testing embedding throughput...")
+    
+    def embed_batch(batch_size):
+        try:
+            start = time.time()
+            response = requests.post(
+                f"{test_url}/api/v1/embed/",
+                json={"texts": [f"Throughput test sentence {i}" for i in range(batch_size)]},
+                timeout=60
+            )
+            end = time.time()
+            
+            if response.status_code == 200:
+                return batch_size / (end - start)  # texts per second
+            return 0
+        except:
+            return 0
+    
+    # Test different batch sizes
+    throughput_results = {}
+    for batch_size in [1, 5, 10, 20]:
+        throughput = embed_batch(batch_size)
+        throughput_results[f"batch_{batch_size}"] = throughput
+        if throughput > 0:
+            print(f"    📊 Batch {batch_size}: {throughput:.1f} texts/sec")
+    
+    results["results"]["throughput"] = throughput_results
+    
+    # Concurrent requests test
+    print("  • Testing concurrent requests...")
+    
+    def single_request(request_id):
+        try:
+            start = time.time()
+            response = requests.post(
+                f"{test_url}/api/v1/embed/",
+                json={"texts": [f"Concurrent test {request_id}"]},
+                timeout=30
+            )
+            end = time.time()
+            return response.status_code == 200, (end - start) * 1000
+        except:
+            return False, 0
+    
+    # Test with 5 concurrent requests
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(single_request, i) for i in range(5)]
+        concurrent_results = [f.result() for f in concurrent.futures.as_completed(futures)]
+    
+    successful_requests = sum(1 for success, _ in concurrent_results if success)
+    concurrent_latencies = [latency for success, latency in concurrent_results if success]
+    
+    results["results"]["concurrency"] = {
+        "total_requests": 5,
+        "successful_requests": successful_requests,
+        "success_rate": successful_requests / 5,
+        "mean_latency_ms": statistics.mean(concurrent_latencies) if concurrent_latencies else 0
+    }
+    
+    print(f"    ✅ Concurrency: {successful_requests}/5 successful ({successful_requests/5*100:.0f}%)")
+    
+    # Save results
+    output_file = f"{output_dir}/performance_test_results.json"
+    with open(output_file, "w") as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"📊 Performance tests completed!")
+    print(f"📁 Results saved to: {output_file}")
+    
+    # Print summary
+    if "latency" in results["results"]:
+        lat = results["results"]["latency"]
+        print(f"📈 Summary: {lat['mean_ms']:.1f}ms avg latency, {max(throughput_results.values()):.1f} texts/sec peak throughput")
+
+
+if __name__ == "__main__":
+    main()

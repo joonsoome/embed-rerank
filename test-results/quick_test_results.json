@@ -1,0 +1,16 @@
+{
+  "test_type": "quick",
+  "timestamp": 1756393910.078284,
+  "results": {
+    "basic_embedding": {
+      "status": "success",
+      "response_time_ms": 2.468109130859375,
+      "vector_dimension": 4096
+    },
+    "reranking": {
+      "status": "error",
+      "message": "Invalid response format"
+    }
+  },
+  "total_time_seconds": 0.027868986129760742
+}

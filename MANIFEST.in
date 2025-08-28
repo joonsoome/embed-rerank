@@ -1,0 +1,19 @@
+include README.md
+include LICENSE
+include requirements.txt
+include requirements-dev.txt
+include pyproject.toml
+include pyrightconfig.json
+recursive-include app *.py
+recursive-include docs *.md
+recursive-include examples *.py
+recursive-include tools *.sh
+recursive-exclude tests *
+recursive-exclude * __pycache__
+recursive-exclude * *.pyc
+recursive-exclude * *.pyo
+recursive-exclude * *.orig
+recursive-exclude * *.rej
+recursive-exclude * *~
+recursive-exclude * .*.swp
+recursive-exclude * .DS_Store
