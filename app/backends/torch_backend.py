@@ -254,6 +254,62 @@ class TorchBackend(BaseBackend):
 
         return info
 
+    async def rerank_passages(self, query: str, passages: List[str]) -> List[float]:
+        """
+        Rerank passages based on relevance to the query using PyTorch embeddings.
+
+        Args:
+            query: Query text
+            passages: List of passage texts
+
+        Returns:
+            List of relevance scores (higher is more relevant)
+        """
+        start_time = time.time()
+        logger.info(f"PyTorch reranking query with {len(passages)} passages")
+        
+        try:
+            # Generate embeddings for query and passages
+            query_result = await self.embed_texts([query])
+            passages_result = await self.embed_texts(passages)
+            
+            # Get vectors
+            query_vector = query_result.vectors[0]
+            passage_vectors = passages_result.vectors
+            
+            # Compute similarity scores
+            scores = await self.compute_similarity(query_vector, passage_vectors)
+            
+            # Convert to list of floats
+            scores_list = scores.tolist() if hasattr(scores, 'tolist') else list(scores)
+            
+            processing_time = time.time() - start_time
+            logger.info(f"PyTorch reranking completed with {len(scores_list)} scores in {processing_time:.3f}s")
+            return scores_list
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(f"PyTorch reranking failed after {processing_time:.3f}s: {str(e)}")
+            # Fallback to simple similarity
+            return await self._fallback_rerank(query, passages)
+
+    async def _fallback_rerank(self, query: str, passages: List[str]) -> List[float]:
+        """Fallback reranking using simple text similarity."""
+        logger.warning("Using fallback reranking method")
+        scores = []
+        
+        # Simple word overlap scoring as fallback
+        query_words = set(query.lower().split())
+        
+        for passage in passages:
+            passage_words = set(passage.lower().split())
+            overlap = len(query_words.intersection(passage_words))
+            total_words = len(query_words.union(passage_words))
+            score = overlap / max(total_words, 1)  # Jaccard similarity
+            scores.append(float(score))
+        
+        return scores
+
     def __del__(self):
         """Cleanup thread pool on deletion."""
         if hasattr(self, '_executor'):

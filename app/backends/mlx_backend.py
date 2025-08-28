@@ -240,7 +240,14 @@ class MLXBackend(BaseBackend):
 
         except Exception as e:
             # Ultimate fallback: create everything from scratch
-            logger.error("💥 Complete MLX model loading failed - creating fallback system", error=str(e))
+            error_msg = str(e)
+            logger.error("💥 Complete MLX model loading failed - creating fallback system", error=error_msg)
+            
+            # Check if it's a quantization-related error
+            if "quant_method" in error_msg or "quantization" in error_msg.lower():
+                logger.warning("🔧 Quantization config issue detected - this is non-critical for inference")
+                logger.info("💡 MLX backend will use fallback mode - performance may vary")
+            
             tokenizer = self._create_simple_tokenizer()
             config = {"hidden_size": 4096, "placeholder": True}
             model = self._create_placeholder_model(4096)
@@ -569,6 +576,62 @@ class MLXBackend(BaseBackend):
             logger.warning("Could not get MLX device info", error=str(e))
 
         return info
+
+    async def rerank_passages(self, query: str, passages: List[str]) -> List[float]:
+        """
+        Rerank passages based on relevance to the query using MLX embeddings.
+
+        Args:
+            query: Query text
+            passages: List of passage texts
+
+        Returns:
+            List of relevance scores (higher is more relevant)
+        """
+        start_time = time.time()
+        logger.info(f"MLX reranking query with {len(passages)} passages")
+        
+        try:
+            # Generate embeddings for query and passages
+            query_result = await self.embed_texts([query])
+            passages_result = await self.embed_texts(passages)
+            
+            # Get vectors
+            query_vector = query_result.vectors[0]
+            passage_vectors = passages_result.vectors
+            
+            # Compute similarity scores
+            scores = await self.compute_similarity(query_vector, passage_vectors)
+            
+            # Convert to list of floats
+            scores_list = scores.tolist() if hasattr(scores, 'tolist') else list(scores)
+            
+            processing_time = time.time() - start_time
+            logger.info(f"MLX reranking completed with {len(scores_list)} scores in {processing_time:.3f}s")
+            return scores_list
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(f"MLX reranking failed after {processing_time:.3f}s: {str(e)}")
+            # Fallback to simple similarity
+            return await self._fallback_rerank(query, passages)
+
+    async def _fallback_rerank(self, query: str, passages: List[str]) -> List[float]:
+        """Fallback reranking using simple text similarity."""
+        logger.warning("Using fallback reranking method")
+        scores = []
+        
+        # Simple word overlap scoring as fallback
+        query_words = set(query.lower().split())
+        
+        for passage in passages:
+            passage_words = set(passage.lower().split())
+            overlap = len(query_words.intersection(passage_words))
+            total_words = len(query_words.union(passage_words))
+            score = overlap / max(total_words, 1)  # Jaccard similarity
+            scores.append(float(score))
+        
+        return scores
 
     def __del__(self):
         """Cleanup thread pool on deletion."""

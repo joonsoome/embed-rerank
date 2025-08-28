@@ -29,6 +29,15 @@ class RerankResult:
     indices: List[int]
     processing_time: float
     method: str
+    results: Optional[List] = None  # For backwards compatibility with tests
+    
+    def __post_init__(self):
+        """Set results based on scores and indices for test compatibility."""
+        if self.results is None:
+            self.results = [
+                {"score": score, "index": idx} 
+                for idx, score in enumerate(self.scores)
+            ]
 
 
 class BaseBackend(ABC):
@@ -91,6 +100,43 @@ class BaseBackend(ABC):
     def get_device_info(self) -> Dict[str, Any]:
         """Return device information and capabilities."""
         pass
+
+    @abstractmethod
+    async def rerank_passages(self, query: str, passages: List[str]) -> List[float]:
+        """
+        Rerank passages based on relevance to the query.
+
+        Args:
+            query: Query text
+            passages: List of passage texts
+
+        Returns:
+            List of relevance scores (higher is more relevant)
+        """
+        pass
+
+    async def rerank_documents(self, query: str, docs: List[str]) -> RerankResult:
+        """
+        Rerank documents based on relevance to the query.
+
+        Args:
+            query: Query text
+            docs: List of document texts
+
+        Returns:
+            RerankResult with scores and metadata
+        """
+        start_time = time.time()
+        scores = await self.rerank_passages(query, docs)
+        processing_time = time.time() - start_time
+        indices = list(range(len(docs)))
+        
+        return RerankResult(
+            scores=scores,
+            indices=indices,
+            processing_time=processing_time,
+            method="embedding_similarity"
+        )
 
     @property
     def is_loaded(self) -> bool:

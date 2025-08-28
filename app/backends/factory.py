@@ -21,24 +21,25 @@ class BackendFactory:
     @staticmethod
     def create_backend(backend_type: str = "auto", model_name: Optional[str] = None, **kwargs) -> BaseBackend:
         """
-        Create an appropriate embedding backend.
+        Create and configure the appropriate backend for the current platform.
 
         Args:
-            backend_type: Backend type ("auto", "mlx", "torch")
-            model_name: Model name to load
-            **kwargs: Additional backend-specific arguments
+            backend_type: Backend to use ("auto", "mlx", "torch")
+            model_name: Model name to use (overrides settings)
+            **kwargs: Additional backend configuration
 
         Returns:
             Configured backend instance
 
         Raises:
-            ValueError: If backend type is invalid or unavailable
+            ValueError: If backend type is invalid or unavailable for platform
         """
-        model_name = model_name or settings.model_name
+        # Use provided model_name or fallback to settings
+        if model_name is None:
+            model_name = settings.model_name
 
-        # Auto-detect backend if needed
         if backend_type == "auto":
-            backend_type = BackendFactory._detect_optimal_backend()
+            backend_type = BackendFactory._detect_optimal_backend(model_name)
 
         logger.info("Creating backend", backend_type=backend_type, model_name=model_name)
 
@@ -50,9 +51,20 @@ class BackendFactory:
             raise ValueError(f"Unknown backend type: {backend_type}")
 
     @staticmethod
-    def _detect_optimal_backend() -> str:
-        """Detect the optimal backend for the current system."""
+    def _detect_optimal_backend(model_name: str = None) -> str:
+        """Detect the optimal backend for the current system and model."""
         device_info = detect_optimal_device()
+
+        # Check if the model name suggests MLX compatibility
+        if model_name and ("mlx-community" in model_name.lower() or "mlx" in model_name.lower()):
+            if device_info.get("apple_silicon", False) and device_info.get("mlx_available", False):
+                logger.info("Auto-selected MLX backend", reason="mlx_model_detected")
+                return "mlx"
+            else:
+                logger.warning(
+                    "MLX model detected but MLX not available - falling back to torch",
+                    model_name=model_name
+                )
 
         # Default to PyTorch for better compatibility
         if device_info.get("torch_available", False):

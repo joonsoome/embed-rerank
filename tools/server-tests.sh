@@ -1,23 +1,23 @@
 #!/bin/bash
-"""
-🧠 MLX Embedding & Reranking Comprehensive Test Suite
-
-Automated testing framework for embedding quality, reranking performance, 
-and system benchmarks using your configured MLX model.
-
-Features:
-- 🏥 Server health and configuration validation
-- 🔤 Embedding quality assessment (semantic similarity, multilingual)
-- 🔄 Reranking functionality and accuracy testing  
-- ⚡ Performance benchmarking (latency, throughput, stress testing)
-- 💾 Result storage and reporting
-
-Usage:
-    ./tools/server-tests.sh                    # Full test suite
-    ./tools/server-tests.sh --quick            # Quick validation only
-    ./tools/server-tests.sh --performance      # Performance tests only
-    ./tools/server-tests.sh --url localhost:8080  # Custom server URL
-"""
+#
+# 🧠 MLX Embedding & Reranking Comprehensive Test Suite
+#
+# Automated testing framework for embedding quality, reranking performance, 
+# and system benchmarks using your configured MLX model.
+#
+# Features:
+# - 🏥 Server health and configuration validation
+# - 🔤 Embedding quality assessment (semantic similarity, multilingual)
+# - 🔄 Reranking functionality and accuracy testing  
+# - ⚡ Performance benchmarking (latency, throughput, stress testing)
+# - 💾 Result storage and reporting
+#
+# Usage:
+#     ./tools/server-tests.sh                    # Full test suite
+#     ./tools/server-tests.sh --quick            # Quick validation only
+#     ./tools/server-tests.sh --performance      # Performance tests only
+#     ./tools/server-tests.sh --url localhost:8080  # Custom server URL
+#
 
 set -e  # Exit on any error
 
@@ -32,7 +32,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Default configuration
-SERVER_URL="http://localhost:11436"
+SERVER_URL="http://localhost:9000"
 TEST_MODE="full"  # full, quick, performance, quality
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 RESULTS_PREFIX="test_${TIMESTAMP}"
@@ -40,6 +40,31 @@ RESULTS_PREFIX="test_${TIMESTAMP}"
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Load environment variables from .env if it exists
+ENV_FILE="$PROJECT_ROOT/.env"
+if [[ -f "$ENV_FILE" ]]; then
+    # Source .env file (but only export specific variables we care about)
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ $key =~ ^[[:space:]]*# ]] && continue
+        [[ -z $key ]] && continue
+        # Remove quotes from value
+        value=$(echo "$value" | sed 's/^["'\'']\|["'\'']$//g')
+        # Export relevant variables
+        case $key in
+            PORT) ENV_PORT="$value" ;;
+            HOST) ENV_HOST="$value" ;;
+        esac
+    done < "$ENV_FILE"
+    
+    # Update SERVER_URL if PORT or HOST found in .env
+    if [[ -n "$ENV_HOST" && -n "$ENV_PORT" ]]; then
+        SERVER_URL="http://${ENV_HOST}:${ENV_PORT}"
+    elif [[ -n "$ENV_PORT" ]]; then
+        SERVER_URL="http://localhost:${ENV_PORT}"
+    fi
+fi
 
 # Ensure output path is inside the tools directory next to this script
 OUTPUT_DIR="$SCRIPT_DIR/test-results"
@@ -97,10 +122,31 @@ check_prerequisites() {
     if [ ${#missing_packages[@]} -gt 0 ]; then
         print_status "warning" "Missing packages: ${missing_packages[*]}"
         print_step "Installing missing packages..."
-        pip3 install "${missing_packages[@]}" || {
-            print_status "error" "Failed to install required packages"
+        
+        # Try different installation methods
+        if [[ -d "$PROJECT_ROOT/.venv" ]]; then
+            # Use virtual environment if available
+            source "$PROJECT_ROOT/.venv/bin/activate"
+            pip install "${missing_packages[@]}" || {
+                print_status "error" "Failed to install required packages in virtual environment"
+                exit 1
+            }
+        elif command -v pip3 &> /dev/null; then
+            # Try with --user flag first
+            pip3 install --user "${missing_packages[@]}" 2>/dev/null || {
+                # If that fails, try with --break-system-packages
+                print_status "warning" "Installing packages with --break-system-packages flag"
+                pip3 install --break-system-packages "${missing_packages[@]}" || {
+                    print_status "error" "Failed to install required packages"
+                    print_status "info" "Please install manually: pip3 install ${missing_packages[*]}"
+                    print_status "info" "Or create a virtual environment: python3 -m venv .venv && source .venv/bin/activate"
+                    exit 1
+                }
+            }
+        else
+            print_status "error" "pip3 not found"
             exit 1
-        }
+        fi
     fi
     
     print_status "success" "All Python dependencies available"
@@ -260,17 +306,50 @@ except Exception as e:
 run_quick_validation() {
     print_header "🏃 Running Quick Validation"
     
-    print_step "Running quick server validation..."
+    # Set up log files for quick validation
+    local log_file="$OUTPUT_DIR/${RESULTS_PREFIX}_quick_validation.log"
+    local summary_file="$OUTPUT_DIR/${RESULTS_PREFIX}_quick_validation.json"
     
-    # Just run the quality validator in quiet mode for quick check
+    print_step "Running quick server validation..."
+    print_status "info" "Log: $log_file"
+    
+    # Create log header
+    {
+        echo "=============================================="
+        echo "🏃 Quick Validation Test - $(date)"
+        echo "Server URL: $SERVER_URL"
+        echo "=============================================="
+        echo ""
+    } > "$log_file"
+    
+    # Run the quality validator and capture both output and results
     if python3 "$SCRIPT_DIR/tests/validate-quality-simple.py" \
         --url "$SERVER_URL" \
-        --quiet; then
+        --output "$summary_file" \
+        2>&1 | tee -a "$log_file"; then
         
         print_status "success" "Quick validation passed"
+        
+        # Add completion timestamp to log
+        {
+            echo ""
+            echo "=============================================="
+            echo "✅ Quick validation completed - $(date)"
+            echo "=============================================="
+        } >> "$log_file"
+        
         return 0
     else
         print_status "error" "Quick validation failed"
+        
+        # Add failure timestamp to log
+        {
+            echo ""
+            echo "=============================================="
+            echo "❌ Quick validation failed - $(date)"
+            echo "=============================================="
+        } >> "$log_file"
+        
         return 1
     fi
 }
@@ -412,7 +491,7 @@ Test Modes:
   --full              Full test suite (default)
 
 Configuration:
-  --url URL           Server URL (default: http://localhost:11436)
+  --url URL           Server URL (default: http://localhost:9000)
   --output-dir DIR    Output directory (default: tools/test-results)
   --help              Show this help message
 
