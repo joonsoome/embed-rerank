@@ -389,14 +389,16 @@ async def list_models(manager: BackendManager = Depends(get_backend_manager)) ->
     """
     try:
         # 🎯 Get current backend info for model details
-        backend_info = await manager.get_backend_info()
+        backend_info = manager.get_backend_info()
         current_time = int(time.time())
 
-        # 📋 Present OpenAI-compatible model list
+        # 🎯 Show only the actual backend model for transparency
         models = [
-            OpenAIModel(id="text-embedding-ada-002", created=current_time, owned_by="apple-mlx"),
-            OpenAIModel(id="text-embedding-3-small", created=current_time, owned_by="apple-mlx"),
-            OpenAIModel(id="text-embedding-3-large", created=current_time, owned_by="apple-mlx"),
+            OpenAIModel(
+                id=backend_info.get('model_name', 'unknown-model'), 
+                created=current_time, 
+                owned_by="apple-mlx"
+            ),
         ]
 
         logger.info(
@@ -434,7 +436,7 @@ async def openai_health(manager: BackendManager = Depends(get_backend_manager)) 
     """
     try:
         # 🔍 Check MLX backend status
-        backend_info = await manager.get_backend_info()
+        backend_info = manager.get_backend_info()
         is_ready = manager.is_ready()
 
         status = "healthy" if is_ready else "not_ready"

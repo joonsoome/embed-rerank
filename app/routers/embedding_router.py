@@ -145,7 +145,7 @@ async def get_embedding_info(service: EmbeddingService = Depends(get_embedding_s
         Dictionary with Apple MLX service information and performance metrics
     """
     try:
-        info = await service.get_service_info()
+        info = service.get_service_info()
 
         # 🚀 Add Apple MLX branding to the response
         info["powered_by"] = "Apple MLX Framework"

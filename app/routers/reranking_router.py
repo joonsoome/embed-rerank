@@ -164,7 +164,7 @@ async def get_reranking_info(service: RerankingService = Depends(get_reranking_s
         Dictionary with model information, capabilities, and status
     """
     try:
-        info = await service.get_service_info()
+        info = service.get_service_info()
         return info
 
     except Exception as e:
