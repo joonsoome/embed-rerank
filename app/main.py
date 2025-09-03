@@ -431,9 +431,9 @@ def run_quick_test(test_url, output_dir):
     start_time = time.time()
     results = {"test_type": "quick", "timestamp": start_time, "results": {}}
     
+    # Test basic embedding
+    print("  • Testing basic embedding...")
     try:
-        # Test basic embedding
-        print("  • Testing basic embedding...")
         response = requests.post(
             f"{test_url}/api/v1/embed/",
             json={"texts": ["Hello world", "Test embedding"]},
@@ -455,9 +455,13 @@ def run_quick_test(test_url, output_dir):
         else:
             results["results"]["basic_embedding"] = {"status": "error", "message": f"HTTP {response.status_code}"}
             print(f"    ❌ Basic embedding: HTTP {response.status_code}")
+    except Exception as e:
+        results["results"]["basic_embedding"] = {"status": "error", "message": f"Exception: {str(e)}"}
+        print(f"    ❌ Basic embedding: Exception - {str(e)}")
             
-        # Test reranking
-        print("  • Testing reranking...")
+    # Test reranking
+    print("  • Testing reranking...")
+    try:
         response = requests.post(
             f"{test_url}/api/v1/rerank/",
             json={
@@ -467,9 +471,15 @@ def run_quick_test(test_url, output_dir):
             timeout=30
         )
         
+        print(f"    🔍 Debug - Status code: {response.status_code}")
+        if response.status_code != 200:
+            print(f"    🔍 Debug - Response content: {response.text[:200]}")
+        
         if response.status_code == 200:
             data = response.json()
-            if "rankings" in data and len(data["rankings"]) == 3:
+            print(f"    🔍 Debug - Response keys: {list(data.keys())}")
+            print(f"    🔍 Debug - Results count: {len(data.get('results', []))}")
+            if "results" in data and len(data["results"]) == 3:
                 results["results"]["reranking"] = {
                     "status": "success",
                     "response_time_ms": data.get("processing_time", 0) * 1000
@@ -481,10 +491,9 @@ def run_quick_test(test_url, output_dir):
         else:
             results["results"]["reranking"] = {"status": "error", "message": f"HTTP {response.status_code}"}
             print(f"    ❌ Reranking: HTTP {response.status_code}")
-            
     except Exception as e:
-        print(f"    ❌ Test failed: {e}")
-        results["results"]["error"] = str(e)
+        results["results"]["reranking"] = {"status": "error", "message": f"Exception: {str(e)}"}
+        print(f"    ❌ Reranking: Exception - {str(e)}")
     
     # Save results
     total_time = time.time() - start_time

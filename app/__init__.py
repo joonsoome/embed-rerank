@@ -9,5 +9,5 @@ This package provides FastAPI-based REST endpoints for:
 Author: joonsoo-me
 """
 
-__version__ = "1.1.1"
+__version__ = "1.1.3"
 __author__ = "joonsoo-me"
