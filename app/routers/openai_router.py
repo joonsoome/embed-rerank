@@ -25,7 +25,6 @@ from pydantic import BaseModel, Field
 from ..backends.base import BackendManager
 from ..models.requests import EmbedRequest
 from ..models.responses import EmbedResponse
-from ..services.embedding_service import EmbeddingService
 
 # 🧠 Neural network logging powered by Apple Silicon
 logger = structlog.get_logger()
@@ -287,11 +286,12 @@ async def create_embeddings(
         # 🔄 Convert enhanced OpenAI request to internal MLX format
         internal_request = EmbedRequest(texts=texts, normalize=normalize, batch_size=batch_size)
 
-        # 🧠 Create embedding service connected to MLX backend
-        embedding_service = EmbeddingService(manager)
-
         # ⚡ Generate embeddings using Apple MLX magic with enhanced config!
-        mlx_result: EmbedResponse = await embedding_service.embed_texts(internal_request)
+        # Use the global embedding service with dynamic configuration
+        if _embedding_service is None:
+            raise RuntimeError("Embedding service not initialized. Server startup may have failed.")
+
+        mlx_result: EmbedResponse = await _embedding_service.embed_texts(internal_request)
 
         # 📊 Calculate comprehensive timing metrics
         total_time = time.time() - start_time
@@ -394,11 +394,7 @@ async def list_models(manager: BackendManager = Depends(get_backend_manager)) ->
 
         # 🎯 Show only the actual backend model for transparency
         models = [
-            OpenAIModel(
-                id=backend_info.get('model_name', 'unknown-model'), 
-                created=current_time, 
-                owned_by="apple-mlx"
-            ),
+            OpenAIModel(id=backend_info.get('model_name', 'unknown-model'), created=current_time, owned_by="apple-mlx"),
         ]
 
         logger.info(
@@ -476,3 +472,14 @@ async def openai_health(manager: BackendManager = Depends(get_backend_manager)) 
         logger.error("💥 OpenAI compatibility health check failed", error=str(e), error_type=type(e).__name__)
 
         return {"status": "unhealthy", "error": str(e), "openai_compatible": False, "timestamp": time.time()}
+
+
+# 🔧 Global embedding service variable for dynamic configuration
+_embedding_service = None
+
+
+def set_embedding_service(service):
+    """🚀 Set the embedding service for dynamic configuration support"""
+    global _embedding_service
+    _embedding_service = service
+    logger.info("🔄 OpenAI router updated with dynamic embedding service")

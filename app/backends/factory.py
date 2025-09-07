@@ -62,8 +62,7 @@ class BackendFactory:
                 return "mlx"
             else:
                 logger.warning(
-                    "MLX model detected but MLX not available - falling back to torch",
-                    model_name=model_name
+                    "MLX model detected but MLX not available - falling back to torch", model_name=model_name
                 )
 
         # Default to PyTorch for better compatibility

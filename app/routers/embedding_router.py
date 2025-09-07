@@ -32,14 +32,21 @@ router = APIRouter(
     },
 )
 
-# 🌟 Global backend manager - our connection to Apple Silicon magic
+# 🌟 Global services - our connection to Apple Silicon magic
 _backend_manager: BackendManager = None
+_embedding_service: EmbeddingService = None
 
 
 def set_backend_manager(manager: BackendManager):
     """🔌 Connect to the Apple MLX Backend Manager"""
     global _backend_manager
     _backend_manager = manager
+
+
+def set_embedding_service(service: EmbeddingService):
+    """🚀 Set the configured embedding service with dynamic metadata"""
+    global _embedding_service
+    _embedding_service = service
 
 
 async def get_backend_manager() -> BackendManager:
@@ -55,11 +62,18 @@ async def get_embedding_service(manager: BackendManager = Depends(get_backend_ma
 
     This dependency ensures our MLX backend is ready and provides access
     to the embedding service that orchestrates the text-to-vector magic.
+    Now with dynamic model metadata configuration! 🚀
     """
     if not manager.is_ready():
         raise HTTPException(
             status_code=503, detail="Apple MLX backend warming up - please wait for model initialization"
         )
+
+    # 🎯 Use globally configured service if available (with dynamic config)
+    if _embedding_service is not None:
+        return _embedding_service
+
+    # 🔄 Fallback to basic service (legacy mode)
     return EmbeddingService(manager)
 
 

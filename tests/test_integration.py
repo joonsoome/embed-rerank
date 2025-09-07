@@ -162,12 +162,13 @@ class TestRealBackendIntegration:
             if "quant_method" in error_msg or "quantization" in error_msg.lower():
                 # This is a non-critical warning, but the backend should still work with fallback
                 import warnings
+
                 warnings.warn(f"Quantization config warning (non-critical): {error_msg}")
                 # The backend should have loaded a fallback model, so we can continue testing
                 pass
             else:
                 pytest.skip(f"Backend initialization failed: {e}")
-            
+
         # Try to test basic functionality regardless of quantization warnings
         try:
             result = await backend.embed_texts(["Hello world"])
@@ -179,7 +180,7 @@ class TestRealBackendIntegration:
             rerank_result = await backend.rerank_documents("test query", ["document 1", "document 2"])
             assert rerank_result.results is not None
             assert len(rerank_result.results) == 2
-            
+
         except Exception as functional_e:
             pytest.skip(f"Backend functional test failed: {functional_e}")
         finally:

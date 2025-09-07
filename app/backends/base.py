@@ -30,14 +30,11 @@ class RerankResult:
     processing_time: float
     method: str
     results: Optional[List] = None  # For backwards compatibility with tests
-    
+
     def __post_init__(self):
         """Set results based on scores and indices for test compatibility."""
         if self.results is None:
-            self.results = [
-                {"score": score, "index": idx} 
-                for idx, score in enumerate(self.scores)
-            ]
+            self.results = [{"score": score, "index": idx} for idx, score in enumerate(self.scores)]
 
 
 class BaseBackend(ABC):
@@ -130,12 +127,9 @@ class BaseBackend(ABC):
         scores = await self.rerank_passages(query, docs)
         processing_time = time.time() - start_time
         indices = list(range(len(docs)))
-        
+
         return RerankResult(
-            scores=scores,
-            indices=indices,
-            processing_time=processing_time,
-            method="embedding_similarity"
+            scores=scores, indices=indices, processing_time=processing_time, method="embedding_similarity"
         )
 
     @property
@@ -172,7 +166,7 @@ class BaseBackend(ABC):
             if len(text.strip()) == 0:
                 raise ValueError(f"Text at index {i} is empty or whitespace only")
 
-            if len(text) > max_length * 4:  # Rough character limit
+            if len(text) > max_length * 20:  # More generous character limit for preprocessed texts
                 raise ValueError(f"Text at index {i} is too long: {len(text)} characters")
 
     async def health_check(self) -> Dict[str, Any]:

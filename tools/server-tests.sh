@@ -205,6 +205,261 @@ create_output_directory() {
     print_status "success" "Output directory ready: $OUTPUT_DIR"
 }
 
+run_text_processing_tests() {
+    print_header "🚀 Text Processing Strategy Tests (NEW!)"
+    
+    local output_file="$OUTPUT_DIR/${RESULTS_PREFIX}_text_processing.json"
+    local log_file="$OUTPUT_DIR/${RESULTS_PREFIX}_text_processing.log"
+    
+    print_step "Testing text processing options and strategies..."
+    print_status "info" "Output: $output_file"
+    print_status "info" "Log: $log_file"
+    
+    # Create a temporary test script for text processing
+    local test_script="/tmp/test_text_processing_$$$.py"
+    
+    cat > "$test_script" << 'PYTHON_EOF'
+#!/usr/bin/env python3
+"""
+Text Processing Strategy Test Script
+Tests various text processing options for the embed-rerank API.
+"""
+
+import json
+import sys
+import time
+import requests
+from typing import Dict, Any, List
+
+def test_text_processing_strategies(base_url: str) -> Dict[str, Any]:
+    """Test different text processing strategies."""
+    
+    results = {
+        "timestamp": time.time(),
+        "base_url": base_url,
+        "tests": [],
+        "summary": {}
+    }
+    
+    # Long text that exceeds token limits
+    long_text = """
+    This is a very long text that is designed to test the text processing capabilities 
+    of the embed-rerank API. """ * 100 + """
+    This text should trigger various truncation strategies when the token limit is exceeded.
+    We want to see how different strategies (smart_truncate, truncate, extract, error) 
+    handle this long content and what kind of processing information is returned.
+    The text processing system should be able to handle this gracefully and provide
+    detailed information about what was done to the text during processing.
+    """
+    
+    test_cases = [
+        {
+            "name": "Default Processing",
+            "description": "Test with default text processing settings",
+            "data": {
+                "texts": [long_text[:1000]],  # Moderate length
+                "batch_size": 1
+            }
+        },
+        {
+            "name": "Smart Truncate Strategy",
+            "description": "Test smart truncation with processing info",
+            "data": {
+                "texts": [long_text],
+                "batch_size": 1,
+                "auto_truncate": True,
+                "truncation_strategy": "smart_truncate",
+                "return_processing_info": True
+            }
+        },
+        {
+            "name": "Simple Truncate Strategy", 
+            "description": "Test simple truncation strategy",
+            "data": {
+                "texts": [long_text],
+                "batch_size": 1,
+                "auto_truncate": True,
+                "truncation_strategy": "truncate",
+                "return_processing_info": True
+            }
+        },
+        {
+            "name": "Extract Strategy",
+            "description": "Test sentence extraction strategy",
+            "data": {
+                "texts": [long_text],
+                "batch_size": 1,
+                "auto_truncate": True,
+                "truncation_strategy": "extract",
+                "return_processing_info": True
+            }
+        },
+        {
+            "name": "Error Strategy",
+            "description": "Test error on overflow strategy",
+            "data": {
+                "texts": [long_text],
+                "batch_size": 1,
+                "auto_truncate": False,
+                "truncation_strategy": "error",
+                "return_processing_info": True
+            },
+            "expect_error": True
+        },
+        {
+            "name": "Custom Token Override",
+            "description": "Test custom max tokens override",
+            "data": {
+                "texts": [long_text],
+                "batch_size": 1,
+                "auto_truncate": True,
+                "truncation_strategy": "smart_truncate",
+                "max_tokens_override": 1000,
+                "return_processing_info": True
+            }
+        }
+    ]
+    
+    for test_case in test_cases:
+        print(f"🧪 Running: {test_case['name']}")
+        
+        test_result = {
+            "name": test_case["name"],
+            "description": test_case["description"],
+            "timestamp": time.time(),
+            "success": False,
+            "error": None,
+            "response_data": None,
+            "processing_info": None
+        }
+        
+        try:
+            response = requests.post(
+                f"{base_url}/api/v1/embed/",
+                json=test_case["data"],
+                timeout=30
+            )
+            
+            if test_case.get("expect_error", False):
+                # This test should fail
+                if response.status_code >= 400:
+                    test_result["success"] = True
+                    test_result["error"] = f"Expected error occurred (status {response.status_code})"
+                    print(f"   ✅ Expected error occurred: {response.status_code}")
+                else:
+                    test_result["success"] = False
+                    test_result["error"] = "Expected error but request succeeded"
+                    print(f"   ❌ Expected error but got success: {response.status_code}")
+            else:
+                # This test should succeed
+                if response.status_code == 200:
+                    data = response.json()
+                    test_result["success"] = True
+                    test_result["response_data"] = {
+                        "num_embeddings": len(data.get("embeddings", [])),
+                        "embedding_dim": data.get("dim", 0),
+                        "processing_time": data.get("processing_time", 0)
+                    }
+                    
+                    # Extract processing info if available
+                    embeddings = data.get("embeddings", [])
+                    if embeddings and embeddings[0].get("processing_info"):
+                        test_result["processing_info"] = embeddings[0]["processing_info"]
+                        proc_info = embeddings[0]["processing_info"]
+                        print(f"   ✅ Success - Processed: {proc_info.get('original_tokens', 0)}→{proc_info.get('final_tokens', 0)} tokens")
+                        if proc_info.get('truncated', False):
+                            print(f"      📊 Reduction: {proc_info.get('reduction_percentage', 0):.1f}%")
+                    else:
+                        print(f"   ✅ Success - Embeddings: {len(embeddings)}")
+                else:
+                    test_result["success"] = False
+                    test_result["error"] = f"HTTP {response.status_code}: {response.text}"
+                    print(f"   ❌ Failed: HTTP {response.status_code}")
+                    
+        except Exception as e:
+            test_result["success"] = False
+            test_result["error"] = str(e)
+            print(f"   ❌ Exception: {e}")
+        
+        results["tests"].append(test_result)
+    
+    # Calculate summary
+    total_tests = len(results["tests"])
+    successful_tests = sum(1 for t in results["tests"] if t["success"])
+    
+    results["summary"] = {
+        "total_tests": total_tests,
+        "successful_tests": successful_tests,
+        "failed_tests": total_tests - successful_tests,
+        "success_rate": successful_tests / total_tests if total_tests > 0 else 0
+    }
+    
+    return results
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python3 test_text_processing.py <base_url>")
+        sys.exit(1)
+    
+    base_url = sys.argv[1].rstrip('/')
+    results = test_text_processing_strategies(base_url)
+    
+    print(f"\n📊 Text Processing Test Summary:")
+    print(f"   Total Tests: {results['summary']['total_tests']}")
+    print(f"   Successful: {results['summary']['successful_tests']}")
+    print(f"   Failed: {results['summary']['failed_tests']}")
+    print(f"   Success Rate: {results['summary']['success_rate']:.1%}")
+    
+    # Output results as JSON
+    print(json.dumps(results, indent=2))
+PYTHON_EOF
+    
+    # Run the test script
+    if python3 "$test_script" "$SERVER_URL" > "$output_file" 2> "$log_file"; then
+        print_status "success" "Text processing tests completed successfully"
+        
+        # Extract and display summary
+        local summary=$(tail -n 20 "$output_file" | grep -A 4 "Text Processing Test Summary" || echo "Could not parse summary")
+        echo "$summary"
+        
+        # Check results
+        local success_rate=$(python3 -c "
+import json, sys
+try:
+    with open('$output_file', 'r') as f:
+        content = f.read()
+        # Find the JSON part (last valid JSON in the file)
+        lines = content.strip().split('\n')
+        for i in range(len(lines)-1, -1, -1):
+            if lines[i].strip().startswith('{'):
+                json_content = '\n'.join(lines[i:])
+                data = json.loads(json_content)
+                print(data['summary']['success_rate'])
+                break
+except:
+    print('0')
+        " 2>/dev/null || echo "0")
+        
+        # Return success if most tests passed
+        if (( $(echo "$success_rate > 0.75" | bc -l) )); then
+            return 0
+        else
+            print_status "warning" "Text processing tests had low success rate: $(echo "$success_rate * 100" | bc)%"
+            return 1
+        fi
+    else
+        print_status "error" "Text processing tests failed"
+        if [[ -f "$log_file" ]]; then
+            echo "Error log:" | tee -a "$log_file"
+            cat "$log_file"
+        fi
+        return 1
+    fi
+    
+    # Cleanup
+    rm -f "$test_script"
+}
+
 run_quality_validation() {
     print_header "🧠 Running Quality Validation Tests"
     
@@ -488,6 +743,7 @@ Test Modes:
   --quick             Quick validation only (health + basic tests)
   --quality           Quality validation tests only
   --performance       Performance benchmark tests only
+  --text-processing   Text processing strategy tests only (NEW!)
   --full              Full test suite (default)
 
 Configuration:
@@ -499,6 +755,7 @@ Examples:
   $0                                    # Full test suite
   $0 --quick                           # Quick validation
   $0 --performance                     # Performance tests only
+  $0 --text-processing                 # Text processing tests only (NEW!)
   $0 --url http://localhost:8080       # Custom server URL
   $0 --output-dir /tmp/test-results    # Custom output directory
 
@@ -518,6 +775,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --performance)
             TEST_MODE="performance"
+            shift
+            ;;
+        --text-processing)
+            TEST_MODE="text-processing"
             shift
             ;;
         --full)
@@ -590,7 +851,12 @@ main() {
             ;;
         
         "full")
-            ((total_tests += 2))
+            ((total_tests += 3))
+            
+            # Run text processing tests first (NEW!)
+            if run_text_processing_tests; then
+                ((tests_passed++))
+            fi
             
             if run_quality_validation; then
                 ((tests_passed++))
@@ -602,6 +868,13 @@ main() {
             
             # Generate comprehensive report for full tests
             generate_comprehensive_report
+            ;;
+        
+        "text-processing")
+            ((total_tests++))
+            if run_text_processing_tests; then
+                ((tests_passed++))
+            fi
             ;;
     esac
     

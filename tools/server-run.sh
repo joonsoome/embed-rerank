@@ -83,6 +83,11 @@ if command -v python3 >/dev/null 2>&1; then PY=python3; elif command -v python >
 CMD=("$PY" -m uvicorn app.main:app --host "${HOST}" --port "${PORT}")
 
 echo "Starting server in background: ${CMD[*]}" | tee -a "$LOGFILE"
+echo "🚀 Text Processing Settings:" | tee -a "$LOGFILE"
+echo "   Default Auto Truncate: ${DEFAULT_AUTO_TRUNCATE:-true}" | tee -a "$LOGFILE"
+echo "   Default Strategy: ${DEFAULT_TRUNCATION_STRATEGY:-smart_truncate}" | tee -a "$LOGFILE"
+echo "   Max Tokens Override: ${DEFAULT_MAX_TOKENS_OVERRIDE:-none}" | tee -a "$LOGFILE"
+echo "   Return Processing Info: ${DEFAULT_RETURN_PROCESSING_INFO:-false}" | tee -a "$LOGFILE"
 rotate_log_if_needed
 nohup "${CMD[@]}" >>"$LOGFILE" 2>&1 &
 PID=$!

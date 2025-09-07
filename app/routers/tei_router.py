@@ -30,7 +30,6 @@ from pydantic import BaseModel, Field, ValidationError
 from ..backends.base import BackendManager
 from ..models.requests import EmbedRequest, RerankRequest
 from ..models.responses import EmbedResponse, RerankResponse
-from ..services.embedding_service import EmbeddingService
 from ..services.reranking_service import RerankingService
 
 # 🧠 Neural network logging powered by Apple Silicon
@@ -182,11 +181,12 @@ async def tei_embed(
             batch_size=min(32, len(texts)),  # Optimal batch size for MLX
         )
 
-        # 🧠 Create embedding service connected to MLX backend
-        embedding_service = EmbeddingService(manager)
-
         # ⚡ Generate embeddings using Apple MLX magic!
-        mlx_result: EmbedResponse = await embedding_service.embed_texts(internal_request)
+        # Use the global embedding service with dynamic configuration
+        if _embedding_service is None:
+            raise RuntimeError("Embedding service not initialized. Server startup may have failed.")
+
+        mlx_result: EmbedResponse = await _embedding_service.embed_texts(internal_request)
 
         # 📊 Calculate comprehensive timing metrics
         total_time = time.time() - start_time
@@ -386,3 +386,14 @@ async def tei_info(manager: BackendManager = Depends(get_backend_manager)) -> Di
         logger.error("💥 Failed to get TEI service info", error=str(e))
 
         raise HTTPException(status_code=500, detail=f"Failed to get service info: {str(e)}")
+
+
+# 🔧 Global embedding service variable for dynamic configuration
+_embedding_service = None
+
+
+def set_embedding_service(service):
+    """🚀 Set the embedding service for dynamic configuration support"""
+    global _embedding_service
+    _embedding_service = service
+    logger.info("🔄 TEI router updated with dynamic embedding service")

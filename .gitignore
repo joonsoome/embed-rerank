@@ -189,7 +189,10 @@ cython_debug/
 .vscode/
 
 # GitHub Copilot (keep local only)
-.github/copilot-instructions.md
+.github/instructions/
+
+# Production Settings
+com.embed-rerank.server.plist
 
 # Ruff stuff:
 .ruff_cache/

@@ -80,6 +80,10 @@ curl http://localhost:9000/health/
 
 # Stop server
 ./tools/server-stop.sh
+
+# Development automation tools (NEW!)
+./tools/setup-macos-service.sh     # Auto-generate macOS LaunchAgent
+./tools/test-ci-locally.sh         # Run GitHub CI tests locally
 ```
 
 > **Windows Support**: Coming soon! Currently optimized for macOS/Linux.
@@ -137,10 +141,24 @@ MODEL_PATH=                               # Custom model directory
 TRANSFORMERS_CACHE=                           # HF cache override
 # Default: ~/.cache/huggingface/hub/
 
-# Performance
+# Performance & Auto-Configuration
 BATCH_SIZE=32
 MAX_TEXTS_PER_REQUEST=100
+# Note: Token limits and dimensions are automatically extracted from model metadata
+# The service dynamically configures itself based on the loaded model's capabilities
 ```
+
+### 🧠 Smart Text Processing Features
+
+The service automatically handles long texts with intelligent processing:
+
+- **Auto-Truncation**: Texts exceeding token limits are automatically reduced by ~75%
+- **Smart Summarization**: Key sentences are preserved while removing redundancy
+- **Dynamic Token Limits**: Automatically detected from model metadata (e.g., 512 tokens for Qwen3)
+- **Dimension Detection**: Vector dimensions auto-configured from model (e.g., 1024D for Qwen3)
+- **Processing Transparency**: Optional processing info in API responses
+
+**Example: 8000+ character text → 2037 tokens automatically**
 
 ---
 
@@ -277,9 +295,14 @@ For development and comprehensive testing with the source code:
 ./tools/server-tests.sh --quick            # Quick validation only
 ./tools/server-tests.sh --performance      # Performance tests only
 ./tools/server-tests.sh --full             # Full test suite
+./tools/server-tests.sh --text-processing  # Text processing validation
 
 # Custom server URL
 ./tools/server-tests.sh --url http://localhost:8080
+
+# Development automation (NEW!)
+./tools/test-ci-locally.sh                 # Run GitHub CI tests locally
+./tools/setup-macos-service.sh             # Generate macOS LaunchAgent
 
 # Manual health check
 curl http://localhost:9000/health/
@@ -333,6 +356,8 @@ embed-rerank --port 9000 &
 - 🔒 **Privacy**: Your data never leaves your machine
 - 🎯 **Three APIs**: Native, OpenAI, and TEI compatibility
 - 📊 **Production Ready**: Health checks, monitoring, structured logging
+- 🧠 **Smart Text Processing**: Auto-truncation and summarization for long texts
+- ⚙️ **Dynamic Configuration**: Automatic model metadata extraction and dimension detection
 
 ### 🧪 Built-in Testing & Benchmarking
 - 📈 **CLI Performance Testing**: One-command benchmarking
@@ -340,6 +365,12 @@ embed-rerank --port 9000 &
 - 🧠 **Quality Validation**: Semantic similarity and multilingual testing
 - 📊 **JSON Reports**: Automated performance monitoring
 - 🚀 **Real-time Metrics**: Latency, throughput, and success rates
+
+### 🛠 Development Automation (New!)
+- 🍎 **macOS Service Management**: Auto-generate LaunchAgent from configuration
+- 🧪 **Local CI Testing**: Run GitHub CI tests locally before commits
+- 📋 **Code Quality Tools**: Automated Black, isort, and flake8 validation
+- 🔧 **Smart Development Workflow**: Virtual environment checks and setup automation
 
 ### 🛠 Deployment Options
 - 📦 **PyPI Package**: `pip install embed-rerank` for instant deployment
@@ -374,7 +405,21 @@ embed-rerank --test performance --test-url http://localhost:9000
 - **Native**: `POST /api/v1/embed/` and `/api/v1/rerank/`
 - **OpenAI**: `POST /v1/embeddings` (drop-in replacement)
 - **TEI**: `POST /embed` and `/rerank` (Hugging Face compatible)
-- **Health**: `GET /health/` (monitoring and diagnostics)
+- **Health**: `GET /health/` (monitoring and diagnostics with model metadata)
+
+### Development Tools (New!)
+```bash
+# macOS service automation
+./tools/setup-macos-service.sh    # Auto-generate LaunchAgent from .env.example
+
+# Local CI testing
+./tools/test-ci-locally.sh        # Run complete GitHub CI suite locally
+
+# Code quality automation
+black --line-length 120 app/ tests/    # Consistent formatting
+isort --profile black app/ tests/      # Import organization  
+flake8 app/ tests/ --max-line-length=120 --extend-ignore=E203,W503  # Linting
+```
 
 ---
 

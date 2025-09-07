@@ -20,31 +20,37 @@ class EmbeddingVector(BaseModel):
     text: Optional[str] = Field(
         None, description="Original text that was embedded (optional)", json_schema_extra={"example": "Hello world"}
     )
+    # 🚀 텍스트 처리 정보 추가
+    processing_info: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Text processing information (tokens, truncation, etc.)",
+        json_schema_extra={
+            "example": {
+                "original_tokens": 150,
+                "processed_tokens": 100,
+                "truncated": True,
+                "strategy": "smart_truncate",
+            }
+        },
+    )
 
 
 class EmbedResponse(BaseModel):
     """Response model for embedding generation."""
-    
+
     model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()},
-        protected_namespaces=()  # Allow model_ fields
+        json_encoders={datetime: lambda v: v.isoformat()}, protected_namespaces=()  # Allow model_ fields
     )
 
     # Enhanced structure with both new format and backward compatibility
-    embeddings: List[EmbeddingVector] = Field(
-        ..., description="List of embedding vectors with metadata", min_length=1
-    )
+    embeddings: List[EmbeddingVector] = Field(..., description="List of embedding vectors with metadata", min_length=1)
     # Keep original fields for backward compatibility
     vectors: List[List[float]] = Field(..., description="Generated embedding vectors (legacy format)")
     dim: int = Field(..., description="Dimension of embedding vectors", json_schema_extra={"example": 384})
     backend: str = Field(..., description="Backend used for generation", json_schema_extra={"example": "mlx"})
     device: str = Field(..., description="Device used for computation", json_schema_extra={"example": "mps"})
-    processing_time: float = Field(
-        ..., description="Processing time in seconds", json_schema_extra={"example": 0.045}
-    )
-    model_info: str = Field(
-        ..., description="Model identifier", json_schema_extra={"example": "all-MiniLM-L6-v2"}
-    )
+    processing_time: float = Field(..., description="Processing time in seconds", json_schema_extra={"example": 0.045})
+    model_info: str = Field(..., description="Model identifier", json_schema_extra={"example": "all-MiniLM-L6-v2"})
     # Enhanced metadata
     usage: Dict[str, Any] = Field(
         ...,
@@ -73,17 +79,14 @@ class RerankResult(BaseModel):
         le=1.0,
         json_schema_extra={"example": 0.8542},
     )
-    index: int = Field(
-        ..., description="Original index in input list", ge=0, json_schema_extra={"example": 0}
-    )
+    index: int = Field(..., description="Original index in input list", ge=0, json_schema_extra={"example": 0})
 
 
 class RerankResponse(BaseModel):
     """Response model for document reranking."""
-    
+
     model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()},
-        protected_namespaces=()  # Allow model_ fields
+        json_encoders={datetime: lambda v: v.isoformat()}, protected_namespaces=()  # Allow model_ fields
     )
 
     results: List[RerankResult] = Field(
@@ -96,12 +99,8 @@ class RerankResponse(BaseModel):
     )
     backend: str = Field(..., description="Backend used for reranking", json_schema_extra={"example": "torch"})
     device: str = Field(..., description="Device used for computation", json_schema_extra={"example": "mps"})
-    method: str = Field(
-        ..., description="Reranking method used", json_schema_extra={"example": "cross-encoder"}
-    )
-    processing_time: float = Field(
-        ..., description="Processing time in seconds", json_schema_extra={"example": 0.123}
-    )
+    method: str = Field(..., description="Reranking method used", json_schema_extra={"example": "cross-encoder"})
+    processing_time: float = Field(..., description="Processing time in seconds", json_schema_extra={"example": 0.123})
     model_info: str = Field(
         ...,
         description="Model identifier",
@@ -122,7 +121,7 @@ class RerankResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Response model for health check."""
-    
+
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     status: str = Field(
@@ -157,7 +156,12 @@ class HealthResponse(BaseModel):
         None,
         description="System resource information",
         json_schema_extra={
-            "example": {"cpu_percent": 15.2, "memory_percent": 45.8, "memory_available_gb": 8.2, "memory_total_gb": 16.0}
+            "example": {
+                "cpu_percent": 15.2,
+                "memory_percent": 45.8,
+                "memory_available_gb": 8.2,
+                "memory_total_gb": 16.0,
+            }
         },
     )
     performance: Optional[Dict[str, Any]] = Field(
@@ -169,7 +173,7 @@ class HealthResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Response model for errors."""
-    
+
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     error: str = Field(..., description="Error type", json_schema_extra={"example": "ValidationError"})
@@ -196,21 +200,17 @@ class ModelInfo(BaseModel):
     type: str = Field(
         ..., description="Model type (embedding or reranking)", json_schema_extra={"example": "embedding"}
     )
-    backend: str = Field(
-        ..., description="Backend being used (torch or mlx)", json_schema_extra={"example": "mlx"}
-    )
+    backend: str = Field(..., description="Backend being used (torch or mlx)", json_schema_extra={"example": "mlx"})
     dimension: Optional[int] = Field(
         None, description="Embedding dimension (for embedding models)", json_schema_extra={"example": 384}
     )
     max_length: int = Field(..., description="Maximum sequence length", json_schema_extra={"example": 512})
-    loaded: bool = Field(
-        ..., description="Whether the model is currently loaded", json_schema_extra={"example": True}
-    )
+    loaded: bool = Field(..., description="Whether the model is currently loaded", json_schema_extra={"example": True})
 
 
 class ModelsResponse(BaseModel):
     """Response model for listing available models."""
-    
+
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     embedding_models: List[ModelInfo] = Field(..., description="Available embedding models")

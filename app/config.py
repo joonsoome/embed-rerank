@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     max_passages_per_rerank: int = Field(default=1000, description="Maximum passages per rerank request")
     request_timeout: int = Field(default=300, description="Request timeout in seconds")
 
+    # 🚀 Text Processing Configuration (NEW!)
+    # Default settings for text processing when not specified in requests
+    default_auto_truncate: bool = Field(default=True, description="Default auto-truncation setting")
+    default_truncation_strategy: Literal["smart_truncate", "truncate", "extract", "error"] = Field(
+        default="smart_truncate", description="Default truncation strategy"
+    )
+    default_max_tokens_override: Optional[int] = Field(
+        default=None, description="Default max tokens override (None = use model default)"
+    )
+    default_return_processing_info: bool = Field(
+        default=False, description="Default setting for returning processing information"
+    )
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(default="json", description="Log format (json or text)")
