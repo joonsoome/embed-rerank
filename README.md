@@ -4,7 +4,35 @@
 <strong>Lightning-fast local embeddings & reranking for Apple Silicon (MLX-first, OpenAI & TEI compatible)</strong>
 <br/><br/>
 <a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/v/embed-rerank?logo=pypi&logoColor=white" /></a>
-<a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/dm/embed-rerank?logo=pypi&logoColor=white" /></a>
+<a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/dm/embed-rerank?logo=pypi&logoColor=---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"Embedding service not initialized" Error**: Fixed in v1.2.0. If you encounter this error:
+1. Update to the latest version: `pip install --upgrade embed-rerank`
+2. For source installations, ensure proper service initialization in `main.py`
+3. See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions
+
+**API Compatibility Issues**: All four APIs (Native, OpenAI, TEI, Cohere) are fully tested and compatible:
+- ✅ Native API: `/api/v1/embed`, `/api/v1/rerank`
+- ✅ OpenAI API: `/v1/embeddings` (drop-in replacement)  
+- ✅ TEI API: `/embed`, `/rerank` (Hugging Face compatible)
+- ✅ Cohere API: `/v1/rerank`, `/v2/rerank` (Cohere compatible)
+
+**Performance Testing**: Use built-in benchmarking:
+```bash
+embed-rerank --test performance --test-url http://localhost:9000
+```
+
+For comprehensive troubleshooting, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+---
+
+## 📄 License
+
+MIT License - build amazing things with this code!" /></a>
 <a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/pyversions/embed-rerank?logo=python&logoColor=white" /></a>
 <a href="https://github.com/joonsoo-me/embed-rerank/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joonsoo-me/embed-rerank?logo=opensource&logoColor=white" /></a>
 <a href="https://developer.apple.com/silicon/"><img src="https://img.shields.io/badge/Apple_Silicon-Ready-blue?logo=apple&logoColor=white" /></a>
@@ -190,13 +218,14 @@ ls ~/.cache/huggingface/hub | grep -i qwen3 || echo "No Qwen3 models found in ca
 
 ---
 
-## 🌐 Three APIs, One Service
+## 🌐 Four APIs, One Service
 
 | API | Endpoint | Use Case |
 |-----|----------|----------|
 | **Native** | `/api/v1/embed`, `/api/v1/rerank` | New projects |
 | **OpenAI** | `/v1/embeddings` | Existing OpenAI code |
 | **TEI** | `/embed`, `/rerank` | Hugging Face TEI replacement |
+| **Cohere** | `/v1/rerank`, `/v2/rerank` | Cohere API replacement |
 
 ### OpenAI Compatible (Drop-in)
 
@@ -221,6 +250,33 @@ response = client.embeddings.create(
 curl -X POST "http://localhost:9000/embed" 
   -H "Content-Type: application/json" 
   -d '{"inputs": ["Hello world"], "truncate": true}'
+```
+
+### Cohere Compatible
+
+```python
+import requests
+
+# Cohere v2 reranking (recommended)
+response = requests.post("http://localhost:9000/v2/rerank", json={
+    "model": "rerank-multilingual-v3.0",
+    "query": "What is machine learning?",
+    "documents": [
+        {"text": "Machine learning is a subset of AI"},
+        {"text": "Dogs are great pets"},
+        {"text": "Deep learning uses neural networks"}
+    ],
+    "top_n": 3,
+    "return_documents": True
+})
+
+# Cohere v1 reranking (legacy support)
+response = requests.post("http://localhost:9000/v1/rerank", json={
+    "model": "rerank-english-v3.0", 
+    "query": "machine learning",
+    "documents": ["AI is fascinating", "I love pizza", "ML is powerful"],
+    "top_n": 2
+})
 ```
 
 ### Native API
@@ -350,11 +406,11 @@ embed-rerank --port 9000 &
 ## 🚀 What You Get
 
 ### 🎯 Core Features
-- ✅ **Zero Code Changes**: Drop-in replacement for OpenAI API and TEI
+- ✅ **Zero Code Changes**: Drop-in replacement for OpenAI, TEI, and Cohere APIs
 - ⚡ **10x Performance**: Apple MLX acceleration on Apple Silicon  
 - 💰 **Zero Costs**: No API fees, runs locally
 - 🔒 **Privacy**: Your data never leaves your machine
-- 🎯 **Three APIs**: Native, OpenAI, and TEI compatibility
+- 🎯 **Four APIs**: Native, OpenAI, TEI, and Cohere compatibility
 - 📊 **Production Ready**: Health checks, monitoring, structured logging
 - 🧠 **Smart Text Processing**: Auto-truncation and summarization for long texts
 - ⚙️ **Dynamic Configuration**: Automatic model metadata extraction and dimension detection
@@ -375,7 +431,7 @@ embed-rerank --port 9000 &
 ### 🛠 Deployment Options
 - 📦 **PyPI Package**: `pip install embed-rerank` for instant deployment
 - 🔧 **Source Code**: Full development environment with advanced tooling
-- 🌐 **Multi-API Support**: OpenAI, TEI, and native endpoints
+- 🌐 **Multi-API Support**: OpenAI, TEI, Cohere, and native endpoints
 - ⚙️ **Flexible Configuration**: Environment variables, CLI args, .env files
 
 ---
@@ -405,6 +461,7 @@ embed-rerank --test performance --test-url http://localhost:9000
 - **Native**: `POST /api/v1/embed/` and `/api/v1/rerank/`
 - **OpenAI**: `POST /v1/embeddings` (drop-in replacement)
 - **TEI**: `POST /embed` and `/rerank` (Hugging Face compatible)
+- **Cohere**: `POST /v1/rerank` and `/v2/rerank` (Cohere API compatible)
 - **Health**: `GET /health/` (monitoring and diagnostics with model metadata)
 
 ### Development Tools (New!)

@@ -27,6 +27,7 @@ from .backends.factory import BackendFactory
 from .config import settings
 from .models.responses import ErrorResponse
 from .routers import (
+    cohere_router,
     embedding_router,
     health_router,
     openai_router,
@@ -72,27 +73,21 @@ async def lifespan(app: FastAPI):
         logger.info("🧠 Initializing MLX backend and loading model into unified memory")
         await backend_manager.initialize()
 
-        # 🧠 Initialize embedding service with dynamic configuration
-        from .services.embedding_service import EmbeddingService
-
-        embedding_service = EmbeddingService(backend_manager, settings)
-
-        # 🚀 Configure service based on model metadata
-        logger.info("⚙️ Configuring service with dynamic model metadata")
-
         # 🔌 Connect our routers to the MLX powerhouse
         embedding_router.set_backend_manager(backend_manager)
-        embedding_router.set_embedding_service(embedding_service)  # 🚀 동적 서비스 설정!
-
         reranking_router.set_backend_manager(backend_manager)
         health_router.set_backend_manager(backend_manager)
-        health_router.set_embedding_service(embedding_service)  # 🎯 헬스체크에 서비스 추가!
-
         openai_router.set_backend_manager(backend_manager)
-        openai_router.set_embedding_service(embedding_service)  # 🔄 OpenAI 호환 라우터도 업데이트!
-
         tei_router.set_backend_manager(backend_manager)
-        tei_router.set_embedding_service(embedding_service)  # 🔄 TEI 호환 라우터도 업데이트!
+        cohere_router.set_backend_manager(backend_manager)
+
+        # 🎯 Initialize embedding service for OpenAI and TEI compatibility
+        from .services.embedding_service import EmbeddingService
+        embedding_service = EmbeddingService(backend_manager)
+        
+        # 🔗 Set embedding service for OpenAI and TEI routers
+        openai_router.set_embedding_service(embedding_service)
+        tei_router.set_embedding_service(embedding_service)
 
         # ⏱️ Track our lightning-fast startup time
         health_router.startup_time = startup_time
@@ -102,7 +97,6 @@ async def lifespan(app: FastAPI):
             startup_time=time.time() - startup_time,
             backend=backend.__class__.__name__,
             model_name=settings.model_name,
-            dynamic_config="enabled",
         )
 
         yield
@@ -119,7 +113,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="🚀 Apple MLX Embed-Rerank API",
     description="Production-ready text embedding and document reranking service powered by Apple Silicon & MLX",
-    version="1.0.0",
+    version="1.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -296,6 +290,15 @@ app.include_router(
     },
 )
 
+# 🎯 Cohere Compatibility Router: Cohere API Drop-in Replacement  
+app.include_router(
+    cohere_router.router,
+    responses={
+        503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"},
+        400: {"model": ErrorResponse, "description": "Invalid Request"},
+    },
+)
+
 
 @app.get("/", tags=["root"])
 async def root():
@@ -307,13 +310,14 @@ async def root():
     """
     return {
         "name": "🚀 Apple MLX Embed-Rerank API",
-        "version": "1.0.0",
+        "version": "1.2.0",
         "description": "Production-ready text embedding and document reranking service powered by Apple Silicon & MLX",
         "powered_by": "Apple MLX Framework",
         "optimized_for": "Apple Silicon",
         "performance": "sub-millisecond inference",
         "docs": "/docs",
         "health": "/health",
+        "api_compatibility": ["Native", "OpenAI", "TEI", "Cohere"],
         "endpoints": {
             "embed": "/api/v1/embed",
             "rerank": "/api/v1/rerank",
@@ -324,6 +328,8 @@ async def root():
             "tei_embed": "/embed",
             "tei_rerank": "/rerank",
             "tei_info": "/info",
+            "cohere_rerank_v1": "/v1/rerank",
+            "cohere_rerank_v2": "/v2/rerank",
         },
         "backend": backend_manager.backend.__class__.__name__ if backend_manager else "initializing",
         "status": "🚀 ready" if backend_manager and backend_manager.is_ready() else "🔄 initializing",
@@ -335,27 +341,23 @@ async def root():
 def main():
     """CLI entrypoint for embed-rerank command."""
     import argparse
-
     import uvicorn
 
     parser = argparse.ArgumentParser(description="🚀 Apple MLX-Powered Embedding & Reranking API")
-
+    
     # Server options
     parser.add_argument("--host", default=settings.host, help=f"Server host (default: {settings.host})")
     parser.add_argument("--port", type=int, default=settings.port, help=f"Server port (default: {settings.port})")
-    parser.add_argument(
-        "--reload", action="store_true", default=settings.reload, help="Enable auto-reload for development"
-    )
+    parser.add_argument("--reload", action="store_true", default=settings.reload, help="Enable auto-reload for development")
     parser.add_argument("--log-level", default=settings.log_level, help=f"Log level (default: {settings.log_level})")
-
+    
     # Test options
     test_group = parser.add_argument_group('testing', 'Performance and quality testing options')
-    test_group.add_argument(
-        "--test", choices=['quick', 'quality', 'performance', 'full'], help="Run tests instead of starting server"
-    )
+    test_group.add_argument("--test", choices=['quick', 'quality', 'performance', 'full'], 
+                           help="Run tests instead of starting server")
     test_group.add_argument("--test-url", help="Server URL for testing (default: http://localhost:PORT)")
     test_group.add_argument("--test-output", help="Test output directory (default: ./test-results)")
-
+    
     args = parser.parse_args()
 
     # If test mode is requested, run tests instead of starting server
@@ -380,24 +382,25 @@ def main():
 
 def run_tests(args):
     """Run performance and quality tests."""
-    import os
     import subprocess
     import sys
-
+    import os
+    from pathlib import Path
+    
     # Determine test URL
     test_url = args.test_url
     if not test_url:
         test_url = f"http://localhost:{args.port}"
-
+    
     # Determine output directory
     output_dir = args.test_output or "./test-results"
-
+    
     print("🧪 Running Embed-Rerank Test Suite")
     print(f"📍 Target URL: {test_url}")
     print(f"📁 Output Directory: {output_dir}")
     print(f"🎯 Test Mode: {args.test}")
     print()
-
+    
     try:
         # Try to import required test dependencies
         import requests
@@ -406,7 +409,7 @@ def run_tests(args):
         print("📦 Installing test dependencies...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "requests"])
         import requests
-
+    
     # Check if server is running
     try:
         response = requests.get(f"{test_url}/health/", timeout=5)
@@ -422,10 +425,10 @@ def run_tests(args):
         print("💡 Make sure your server is running:")
         print(f"   embed-rerank --port {args.port}")
         sys.exit(1)
-
+    
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-
+    
     # Run the appropriate test
     if args.test == "quick":
         run_quick_test(test_url, output_dir)
@@ -441,35 +444,33 @@ def run_tests(args):
 
 def run_quick_test(test_url, output_dir):
     """Run a quick validation test."""
+    import requests
     import json
     import time
-
-    import requests
-
+    
     print("🏃 Running Quick Validation Test...")
-
+    
     start_time = time.time()
     results = {"test_type": "quick", "timestamp": start_time, "results": {}}
-
+    
     # Test basic embedding
     print("  • Testing basic embedding...")
     try:
         response = requests.post(
-            f"{test_url}/api/v1/embed/", json={"texts": ["Hello world", "Test embedding"]}, timeout=30
+            f"{test_url}/api/v1/embed/",
+            json={"texts": ["Hello world", "Test embedding"]},
+            timeout=30
         )
-
+        
         if response.status_code == 200:
             data = response.json()
             if "vectors" in data and len(data["vectors"]) == 2:
                 results["results"]["basic_embedding"] = {
                     "status": "success",
                     "response_time_ms": data.get("processing_time", 0) * 1000,
-                    "vector_dimension": len(data["vectors"][0]) if data["vectors"] else 0,
+                    "vector_dimension": len(data["vectors"][0]) if data["vectors"] else 0
                 }
-                print(
-                    f"    ✅ Basic embedding: {len(data['vectors'][0])}D vectors in "
-                    f"{data.get('processing_time', 0)*1000:.1f}ms"
-                )
+                print(f"    ✅ Basic embedding: {len(data['vectors'][0])}D vectors in {data.get('processing_time', 0)*1000:.1f}ms")
             else:
                 results["results"]["basic_embedding"] = {"status": "error", "message": "Invalid response format"}
                 print("    ❌ Basic embedding: Invalid response format")
@@ -479,7 +480,7 @@ def run_quick_test(test_url, output_dir):
     except Exception as e:
         results["results"]["basic_embedding"] = {"status": "error", "message": f"Exception: {str(e)}"}
         print(f"    ❌ Basic embedding: Exception - {str(e)}")
-
+            
     # Test reranking
     print("  • Testing reranking...")
     try:
@@ -487,15 +488,15 @@ def run_quick_test(test_url, output_dir):
             f"{test_url}/api/v1/rerank/",
             json={
                 "query": "machine learning",
-                "passages": ["AI and ML are fascinating", "I love pizza", "Deep learning is a subset of ML"],
+                "passages": ["AI and ML are fascinating", "I love pizza", "Deep learning is a subset of ML"]
             },
-            timeout=30,
+            timeout=30
         )
-
+        
         print(f"    🔍 Debug - Status code: {response.status_code}")
         if response.status_code != 200:
             print(f"    🔍 Debug - Response content: {response.text[:200]}")
-
+        
         if response.status_code == 200:
             data = response.json()
             print(f"    🔍 Debug - Response keys: {list(data.keys())}")
@@ -503,7 +504,7 @@ def run_quick_test(test_url, output_dir):
             if "results" in data and len(data["results"]) == 3:
                 results["results"]["reranking"] = {
                     "status": "success",
-                    "response_time_ms": data.get("processing_time", 0) * 1000,
+                    "response_time_ms": data.get("processing_time", 0) * 1000
                 }
                 print(f"    ✅ Reranking: 3 passages ranked in {data.get('processing_time', 0)*1000:.1f}ms")
             else:
@@ -515,15 +516,15 @@ def run_quick_test(test_url, output_dir):
     except Exception as e:
         results["results"]["reranking"] = {"status": "error", "message": f"Exception: {str(e)}"}
         print(f"    ❌ Reranking: Exception - {str(e)}")
-
+    
     # Save results
     total_time = time.time() - start_time
     results["total_time_seconds"] = total_time
-
+    
     output_file = f"{output_dir}/quick_test_results.json"
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
-
+    
     print(f"📊 Quick test completed in {total_time:.1f}s")
     print(f"📁 Results saved to: {output_file}")
 
@@ -532,41 +533,49 @@ def run_quality_test(test_url, output_dir):
     """Run quality validation tests."""
     print("🧠 Running Quality Validation Tests...")
     print("💡 This may take a few minutes...")
-
+    
     # Implementation would call the existing quality test script
     print("✅ Quality tests completed! (Implementation placeholder)")
-
+    
 
 def run_performance_test(test_url, output_dir):
     """Run performance benchmark tests."""
-    import concurrent.futures
-    import json
-    import statistics
-    import time
-
     import requests
-
+    import json
+    import time
+    import statistics
+    import concurrent.futures
+    
     print("⚡ Running Performance Benchmark Tests...")
-
-    results = {"test_type": "performance", "timestamp": time.time(), "server_url": test_url, "results": {}}
-
+    
+    results = {
+        "test_type": "performance", 
+        "timestamp": time.time(), 
+        "server_url": test_url,
+        "results": {}
+    }
+    
     # Latency test
     print("  • Testing embedding latency...")
     latencies = []
-
+    
     for i in range(10):
         start = time.time()
         try:
-            response = requests.post(f"{test_url}/api/v1/embed/", json={"texts": [f"Test sentence {i}"]}, timeout=30)
+            response = requests.post(
+                f"{test_url}/api/v1/embed/",
+                json={"texts": [f"Test sentence {i}"]},
+                timeout=30
+            )
             end = time.time()
-
+            
             if response.status_code == 200:
                 latencies.append((end - start) * 1000)  # Convert to ms
             else:
                 print(f"    ⚠️  Request {i+1} failed: HTTP {response.status_code}")
         except Exception as e:
             print(f"    ⚠️  Request {i+1} failed: {e}")
-
+    
     if latencies:
         results["results"]["latency"] = {
             "mean_ms": statistics.mean(latencies),
@@ -574,29 +583,29 @@ def run_performance_test(test_url, output_dir):
             "min_ms": min(latencies),
             "max_ms": max(latencies),
             "p95_ms": sorted(latencies)[int(0.95 * len(latencies))],
-            "sample_count": len(latencies),
+            "sample_count": len(latencies)
         }
         print(f"    ✅ Latency: {statistics.mean(latencies):.1f}ms avg, {max(latencies):.1f}ms max")
-
+    
     # Throughput test
     print("  • Testing embedding throughput...")
-
+    
     def embed_batch(batch_size):
         try:
             start = time.time()
             response = requests.post(
                 f"{test_url}/api/v1/embed/",
                 json={"texts": [f"Throughput test sentence {i}" for i in range(batch_size)]},
-                timeout=60,
+                timeout=60
             )
             end = time.time()
-
+            
             if response.status_code == 200:
                 return batch_size / (end - start)  # texts per second
             return 0
-        except Exception:
+        except:
             return 0
-
+    
     # Test different batch sizes
     throughput_results = {}
     for batch_size in [1, 5, 10, 20]:
@@ -604,55 +613,54 @@ def run_performance_test(test_url, output_dir):
         throughput_results[f"batch_{batch_size}"] = throughput
         if throughput > 0:
             print(f"    📊 Batch {batch_size}: {throughput:.1f} texts/sec")
-
+    
     results["results"]["throughput"] = throughput_results
-
+    
     # Concurrent requests test
     print("  • Testing concurrent requests...")
-
+    
     def single_request(request_id):
         try:
             start = time.time()
             response = requests.post(
-                f"{test_url}/api/v1/embed/", json={"texts": [f"Concurrent test {request_id}"]}, timeout=30
+                f"{test_url}/api/v1/embed/",
+                json={"texts": [f"Concurrent test {request_id}"]},
+                timeout=30
             )
             end = time.time()
             return response.status_code == 200, (end - start) * 1000
-        except Exception:
+        except:
             return False, 0
-
+    
     # Test with 5 concurrent requests
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(single_request, i) for i in range(5)]
         concurrent_results = [f.result() for f in concurrent.futures.as_completed(futures)]
-
+    
     successful_requests = sum(1 for success, _ in concurrent_results if success)
     concurrent_latencies = [latency for success, latency in concurrent_results if success]
-
+    
     results["results"]["concurrency"] = {
         "total_requests": 5,
         "successful_requests": successful_requests,
         "success_rate": successful_requests / 5,
-        "mean_latency_ms": statistics.mean(concurrent_latencies) if concurrent_latencies else 0,
+        "mean_latency_ms": statistics.mean(concurrent_latencies) if concurrent_latencies else 0
     }
-
+    
     print(f"    ✅ Concurrency: {successful_requests}/5 successful ({successful_requests/5*100:.0f}%)")
-
+    
     # Save results
     output_file = f"{output_dir}/performance_test_results.json"
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
-
-    print("📊 Performance tests completed!")
+    
+    print(f"📊 Performance tests completed!")
     print(f"📁 Results saved to: {output_file}")
-
+    
     # Print summary
     if "latency" in results["results"]:
         lat = results["results"]["latency"]
-        print(
-            f"📈 Summary: {lat['mean_ms']:.1f}ms avg latency, "
-            f"{max(throughput_results.values()):.1f} texts/sec peak throughput"
-        )
+        print(f"📈 Summary: {lat['mean_ms']:.1f}ms avg latency, {max(throughput_results.values()):.1f} texts/sec peak throughput")
 
 
 if __name__ == "__main__":

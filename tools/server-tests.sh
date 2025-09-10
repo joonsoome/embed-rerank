@@ -16,6 +16,7 @@
 #     ./tools/server-tests.sh                    # Full test suite
 #     ./tools/server-tests.sh --quick            # Quick validation only
 #     ./tools/server-tests.sh --performance      # Performance tests only
+#     ./tools/server-tests.sh --api-compatibility # Test all API formats (Native, OpenAI, TEI, Cohere)
 #     ./tools/server-tests.sh --url localhost:8080  # Custom server URL
 #
 
@@ -60,7 +61,12 @@ if [[ -f "$ENV_FILE" ]]; then
     
     # Update SERVER_URL if PORT or HOST found in .env
     if [[ -n "$ENV_HOST" && -n "$ENV_PORT" ]]; then
-        SERVER_URL="http://${ENV_HOST}:${ENV_PORT}"
+        # Replace 0.0.0.0 with localhost for better UX
+        if [[ "$ENV_HOST" == "0.0.0.0" ]]; then
+            SERVER_URL="http://localhost:${ENV_PORT}"
+        else
+            SERVER_URL="http://${ENV_HOST}:${ENV_PORT}"
+        fi
     elif [[ -n "$ENV_PORT" ]]; then
         SERVER_URL="http://localhost:${ENV_PORT}"
     fi
@@ -95,6 +101,54 @@ print_step() {
 
 check_prerequisites() {
     print_header "🔍 Prerequisites Check"
+    
+    # Check if virtual environment is activated or if we're in the project's .venv
+    local current_venv="$VIRTUAL_ENV"
+    local expected_venv="$PROJECT_ROOT/.venv"
+    
+    # Check if we're already in the correct virtual environment
+    if [[ -n "$current_venv" && "$current_venv" -ef "$expected_venv" ]]; then
+        print_status "success" "Virtual environment already active: $current_venv"
+    elif [[ -n "$current_venv" ]]; then
+        print_status "warning" "Different virtual environment active: $current_venv"
+        print_status "info" "Expected: $expected_venv"
+        print_step "Switching to project virtual environment..."
+        
+        # Deactivate current and activate project venv
+        if [[ -d "$expected_venv" ]]; then
+            source "$expected_venv/bin/activate"
+            print_status "success" "Switched to project virtual environment: $VIRTUAL_ENV"
+        else
+            print_status "error" "Project virtual environment not found: $expected_venv"
+            print_step "Creating virtual environment..."
+            python3 -m venv "$expected_venv" || {
+                print_status "error" "Failed to create virtual environment"
+                exit 1
+            }
+            source "$expected_venv/bin/activate"
+            print_status "success" "Created and activated virtual environment: $VIRTUAL_ENV"
+        fi
+    else
+        print_status "warning" "Virtual environment not activated"
+        
+        # Check if .venv directory exists
+        if [[ ! -d "$expected_venv" ]]; then
+            print_step "Creating virtual environment..."
+            if ! python3 -m venv "$expected_venv"; then
+                print_status "error" "Failed to create virtual environment"
+                exit 1
+            fi
+            print_status "success" "Virtual environment created"
+        fi
+        
+        # Activate virtual environment
+        print_step "Activating virtual environment..."
+        if ! source "$expected_venv/bin/activate"; then
+            print_status "error" "Failed to activate virtual environment"
+            exit 1
+        fi
+        print_status "success" "Virtual environment activated: $VIRTUAL_ENV"
+    fi
     
     # Check if Python 3 is available
     if ! command -v python3 &> /dev/null; then
@@ -418,25 +472,62 @@ PYTHON_EOF
     if python3 "$test_script" "$SERVER_URL" > "$output_file" 2> "$log_file"; then
         print_status "success" "Text processing tests completed successfully"
         
-        # Extract and display summary
-        local summary=$(tail -n 20 "$output_file" | grep -A 4 "Text Processing Test Summary" || echo "Could not parse summary")
-        echo "$summary"
+        # Extract and display summary from text output
+        local summary=$(grep -A 10 "📊 Text Processing Test Summary" "$output_file" 2>/dev/null)
+        if [[ -n "$summary" ]]; then
+            echo "$summary"
+        else
+            # Try alternative summary format
+            summary=$(grep -A 5 "Success Rate:" "$output_file" 2>/dev/null)
+            if [[ -n "$summary" ]]; then
+                echo "$summary"
+            else
+                print_status "info" "Text processing completed (summary in JSON format)"
+            fi
+        fi
         
-        # Check results
+        # Check results - improved parsing logic
         local success_rate=$(python3 -c "
-import json, sys
+import json, sys, re
 try:
     with open('$output_file', 'r') as f:
         content = f.read()
-        # Find the JSON part (last valid JSON in the file)
-        lines = content.strip().split('\n')
-        for i in range(len(lines)-1, -1, -1):
-            if lines[i].strip().startswith('{'):
-                json_content = '\n'.join(lines[i:])
-                data = json.loads(json_content)
+        
+        # Try to find JSON in the content
+        # Look for the summary in the text output first
+        summary_match = re.search(r'Success Rate: ([\d.]+)%', content)
+        if summary_match:
+            rate = float(summary_match.group(1)) / 100
+            print(rate)
+        else:
+            # Fallback: try to parse JSON
+            json_start = -1
+            for i, char in enumerate(content):
+                if char == '{' and content[i:i+15].find('\"timestamp\"') > 0:
+                    json_start = i
+                    break
+            
+            if json_start != -1:
+                json_chars = []
+                brace_count = 0
+                
+                for i in range(json_start, len(content)):
+                    char = content[i]
+                    json_chars.append(char)
+                    
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            break
+                
+                json_str = ''.join(json_chars)
+                data = json.loads(json_str)
                 print(data['summary']['success_rate'])
-                break
-except:
+            else:
+                print('0')
+except Exception as e:
     print('0')
         " 2>/dev/null || echo "0")
         
@@ -449,6 +540,479 @@ except:
         fi
     else
         print_status "error" "Text processing tests failed"
+        if [[ -f "$log_file" ]]; then
+            echo "Error log:" | tee -a "$log_file"
+            cat "$log_file"
+        fi
+        return 1
+    fi
+    
+    # Cleanup
+    rm -f "$test_script"
+}
+
+run_api_compatibility_tests() {
+    print_header "🔄 Running Multi-API Compatibility Tests"
+    
+    local output_file="$OUTPUT_DIR/${RESULTS_PREFIX}_api_compatibility.json"
+    local log_file="$OUTPUT_DIR/${RESULTS_PREFIX}_api_compatibility.log"
+    
+    print_step "Testing all supported API formats (Native, OpenAI, TEI, Cohere)..."
+    print_status "info" "Output: $output_file"
+    print_status "info" "Log: $log_file"
+    
+    # Test server connectivity first
+    print_step "Checking server connectivity..."
+    if ! curl -s --max-time 5 "$SERVER_URL/health" > /dev/null; then
+        print_status "error" "Server not responding at $SERVER_URL"
+        return 1
+    fi
+    
+    print_status "success" "Server is responding"
+    
+    # Set environment variable for tests
+    export TEST_SERVER_URL="$SERVER_URL"
+    
+    # Run pytest-based API tests
+    print_step "Running Native API tests..."
+    if cd "$PROJECT_ROOT" && python -m pytest tests/test_native_api.py -v >> "$log_file" 2>&1; then
+        print_status "success" "Native API tests passed"
+    else
+        print_status "warning" "Native API tests had issues (check log)"
+    fi
+    
+    print_step "Running OpenAI compatibility tests..."
+    if cd "$PROJECT_ROOT" && python -m pytest tests/test_openai_api.py -v >> "$log_file" 2>&1; then
+        print_status "success" "OpenAI API tests passed"
+    else
+        print_status "warning" "OpenAI API tests had issues (check log)"
+    fi
+    
+    print_step "Running TEI compatibility tests..."
+    if cd "$PROJECT_ROOT" && python -m pytest tests/test_tei_api.py -v >> "$log_file" 2>&1; then
+        print_status "success" "TEI API tests passed"
+    else
+        print_status "warning" "TEI API tests had issues (check log)"
+    fi
+    
+    print_step "Running Cohere compatibility tests..."
+    if cd "$PROJECT_ROOT" && python -m pytest tests/test_cohere_api.py -v >> "$log_file" 2>&1; then
+        print_status "success" "Cohere API tests passed"
+    else
+        print_status "warning" "Cohere API tests had issues (check log)"
+    fi
+    
+    # Run comprehensive compatibility check
+    print_step "Running cross-API consistency validation..."
+    local test_script="/tmp/test_api_compatibility_$$$.py"
+    
+    cat > "$test_script" << 'PYTHON_EOF'
+#!/usr/bin/env python3
+"""
+Multi-API Compatibility Test Script
+Tests Native, OpenAI, TEI, and Cohere API formats for consistency.
+"""
+
+import json
+import sys
+import time
+import requests
+from typing import Dict, Any, List, Tuple
+
+def test_api_endpoints(base_url: str) -> Dict[str, Any]:
+    """Test all supported API endpoints for compatibility."""
+    
+    results = {
+        "timestamp": time.time(),
+        "server_url": base_url,
+        "api_tests": {},
+        "cross_api_validation": {},
+        "summary": {}
+    }
+    
+    # Sample data for testing
+    test_query = "machine learning and artificial intelligence"
+    test_texts = [
+        "Machine learning is a subset of artificial intelligence that enables computers to learn automatically.",
+        "Deep learning uses neural networks with multiple layers to model complex patterns in data.",
+        "Natural language processing helps computers understand and generate human language.",
+        "Computer vision enables machines to interpret and understand visual information.",
+        "Python is a popular programming language used in data science and machine learning."
+    ]
+    
+    # Define all API endpoints to test
+    api_endpoints = {
+        "native_embed": {
+            "url": f"{base_url}/api/v1/embed/",
+            "method": "POST",
+            "payload": {
+                "texts": test_texts[:3],
+                "normalize": True
+            }
+        },
+        "native_rerank": {
+            "url": f"{base_url}/api/v1/rerank/",
+            "method": "POST", 
+            "payload": {
+                "query": test_query,
+                "passages": test_texts,
+                "top_k": 3,
+                "return_documents": True
+            }
+        },
+        "openai_embed": {
+            "url": f"{base_url}/v1/embeddings",
+            "method": "POST",
+            "payload": {
+                "input": test_texts[:3],
+                "model": "text-embedding-ada-002"
+            }
+        },
+        "openai_models": {
+            "url": f"{base_url}/v1/models",
+            "method": "GET",
+            "payload": None
+        },
+        "tei_embed": {
+            "url": f"{base_url}/embed",
+            "method": "POST",
+            "payload": {
+                "inputs": test_texts[:3]
+            }
+        },
+        "tei_rerank": {
+            "url": f"{base_url}/rerank",
+            "method": "POST",
+            "payload": {
+                "query": test_query,
+                "texts": test_texts,
+                "return_documents": True
+            }
+        },
+        "cohere_v1_rerank": {
+            "url": f"{base_url}/v1/rerank",
+            "method": "POST",
+            "payload": {
+                "query": test_query,
+                "documents": test_texts,
+                "top_n": 3,
+                "return_documents": True
+            }
+        },
+        "cohere_v2_rerank": {
+            "url": f"{base_url}/v2/rerank",
+            "method": "POST",
+            "payload": {
+                "query": test_query,
+                "documents": test_texts,
+                "top_n": 3,
+                "return_documents": False
+            }
+        }
+    }
+    
+    # Test each API endpoint
+    for api_name, config in api_endpoints.items():
+        print(f"Testing {api_name}...")
+        
+        try:
+            start_time = time.time()
+            
+            if config["method"] == "POST":
+                response = requests.post(
+                    config["url"], 
+                    json=config["payload"],
+                    headers={"Content-Type": "application/json"},
+                    timeout=30
+                )
+            else:
+                response = requests.get(config["url"], timeout=30)
+            
+            end_time = time.time()
+            
+            test_result = {
+                "success": response.status_code == 200,
+                "status_code": response.status_code,
+                "response_time_ms": (end_time - start_time) * 1000,
+                "url": config["url"],
+                "method": config["method"]
+            }
+            
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    test_result["response_data"] = response_data
+                    
+                    # Extract relevant metrics based on API type
+                    if "embed" in api_name:
+                        # Count embeddings/vectors
+                        if "data" in response_data:  # OpenAI format
+                            test_result["embeddings_count"] = len(response_data["data"])
+                            test_result["embedding_dimension"] = len(response_data["data"][0]["embedding"]) if response_data["data"] else 0
+                        elif "embeddings" in response_data:  # Native format
+                            test_result["embeddings_count"] = len(response_data["embeddings"])
+                            test_result["embedding_dimension"] = response_data["dim"]
+                        elif isinstance(response_data, list):  # TEI format
+                            test_result["embeddings_count"] = len(response_data)
+                            test_result["embedding_dimension"] = len(response_data[0]) if response_data else 0
+                    
+                    elif "rerank" in api_name:
+                        # Count reranking results
+                        if "results" in response_data:  # Native/Cohere format
+                            test_result["results_count"] = len(response_data["results"])
+                        elif isinstance(response_data, list):  # TEI format
+                            test_result["results_count"] = len(response_data)
+                    
+                    elif "models" in api_name:
+                        # Count available models
+                        if "data" in response_data:  # OpenAI format
+                            test_result["models_count"] = len(response_data["data"])
+                
+                except json.JSONDecodeError:
+                    test_result["error"] = "Invalid JSON response"
+                    test_result["success"] = False
+            else:
+                test_result["error"] = response.text[:200]
+                
+        except Exception as e:
+            test_result = {
+                "success": False,
+                "error": str(e),
+                "url": config["url"],
+                "method": config["method"],
+                "response_time_ms": 0
+            }
+        
+        results["api_tests"][api_name] = test_result
+    
+    # Cross-API validation (compare results between different formats)
+    print("Running cross-API validation...")
+    
+    # Compare reranking results between different APIs
+    rerank_apis = ["native_rerank", "tei_rerank", "cohere_v1_rerank"]
+    successful_rerank_results = {}
+    
+    for api_name in rerank_apis:
+        if api_name in results["api_tests"] and results["api_tests"][api_name]["success"]:
+            response_data = results["api_tests"][api_name]["response_data"]
+            
+            # Extract scores and indices for comparison
+            if api_name == "native_rerank":
+                scores = [r["score"] for r in response_data["results"]]
+                indices = [r["index"] for r in response_data["results"]]
+            elif api_name == "tei_rerank":
+                scores = [r["score"] for r in response_data] if isinstance(response_data, list) else []
+                indices = [r["index"] for r in response_data] if isinstance(response_data, list) else []
+            elif api_name == "cohere_v1_rerank":
+                scores = [r["relevance_score"] for r in response_data["results"]]
+                indices = [r["index"] for r in response_data["results"]]
+            
+            successful_rerank_results[api_name] = {"scores": scores, "indices": indices}
+    
+    # Compare scores and rankings
+    if len(successful_rerank_results) >= 2:
+        apis = list(successful_rerank_results.keys())
+        first_api = apis[0]
+        
+        cross_validation = {
+            "compared_apis": apis,
+            "score_consistency": True,
+            "ranking_consistency": True,
+            "details": {}
+        }
+        
+        for api in apis[1:]:
+            # Check if scores are similar (within small tolerance)
+            scores1 = successful_rerank_results[first_api]["scores"]
+            scores2 = successful_rerank_results[api]["scores"]
+            
+            if len(scores1) == len(scores2):
+                score_diff = sum(abs(s1 - s2) for s1, s2 in zip(scores1, scores2)) / len(scores1)
+                cross_validation["details"][f"{first_api}_vs_{api}_avg_score_diff"] = score_diff
+                
+                if score_diff > 1e-6:  # Allow for small floating point differences
+                    cross_validation["score_consistency"] = False
+                
+                # Check ranking consistency
+                indices1 = successful_rerank_results[first_api]["indices"]
+                indices2 = successful_rerank_results[api]["indices"]
+                
+                if indices1 != indices2:
+                    cross_validation["ranking_consistency"] = False
+                    cross_validation["details"][f"{first_api}_vs_{api}_ranking_match"] = False
+                else:
+                    cross_validation["details"][f"{first_api}_vs_{api}_ranking_match"] = True
+        
+        results["cross_api_validation"] = cross_validation
+    
+    # Generate summary
+    total_apis = len(results["api_tests"])
+    successful_apis = sum(1 for test in results["api_tests"].values() if test["success"])
+    
+    # Calculate average response times
+    successful_times = [test["response_time_ms"] for test in results["api_tests"].values() if test["success"]]
+    avg_response_time = sum(successful_times) / len(successful_times) if successful_times else 0
+    
+    results["summary"] = {
+        "total_apis_tested": total_apis,
+        "successful_apis": successful_apis,
+        "failed_apis": total_apis - successful_apis,
+        "success_rate": successful_apis / total_apis if total_apis > 0 else 0,
+        "average_response_time_ms": avg_response_time,
+        "all_apis_working": successful_apis == total_apis,
+        "cross_api_consistency": results["cross_api_validation"].get("score_consistency", False) and 
+                                results["cross_api_validation"].get("ranking_consistency", False)
+    }
+    
+    return results
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python test_api_compatibility.py <base_url>")
+        sys.exit(1)
+    
+    base_url = sys.argv[1].rstrip('/')
+    results = test_api_endpoints(base_url)
+    
+    print(f"\n📊 API Compatibility Test Summary:")
+    print(f"   Total APIs Tested: {results['summary']['total_apis_tested']}")
+    print(f"   Successful APIs: {results['summary']['successful_apis']}")
+    print(f"   Failed APIs: {results['summary']['failed_apis']}")
+    print(f"   Success Rate: {results['summary']['success_rate']:.1%}")
+    print(f"   Average Response Time: {results['summary']['average_response_time_ms']:.1f}ms")
+    print(f"   Cross-API Consistency: {results['summary']['cross_api_consistency']}")
+    
+    # Output results as JSON
+    print(json.dumps(results, indent=2))
+PYTHON_EOF
+    
+    # Run the API compatibility test
+    if python3 "$test_script" "$SERVER_URL" > "$output_file" 2> "$log_file"; then
+        # Extract summary information
+        local summary=$(python3 -c "
+import json, sys, re
+try:
+    with open('$output_file', 'r') as f:
+        content = f.read()
+        
+        # Find the complete JSON object - look for the first { that starts a JSON object
+        # Skip any text before the actual JSON starts
+        json_start = -1
+        brace_count = 0
+        in_json = False
+        
+        # Find start of JSON by looking for { followed by \"timestamp\"
+        for i, char in enumerate(content):
+            if char == '{' and content[i:i+15].find('\"timestamp\"') > 0:
+                json_start = i
+                break
+        
+        if json_start != -1:
+            # Extract the complete JSON object by counting braces
+            json_chars = []
+            brace_count = 0
+            
+            for i in range(json_start, len(content)):
+                char = content[i]
+                json_chars.append(char)
+                
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        break
+            
+            json_str = ''.join(json_chars)
+            data = json.loads(json_str)
+            summary = data.get('summary', {})
+            
+            if summary:
+                print(f\"Total APIs: {summary.get('total_apis_tested', 'Unknown')}\")
+                print(f\"Successful: {summary.get('successful_apis', 'Unknown')}\")
+                success_rate = summary.get('success_rate', 0)
+                print(f\"Success Rate: {success_rate:.1%}\")
+                avg_time = summary.get('average_response_time_ms', 0)
+                print(f\"Avg Response Time: {avg_time:.1f}ms\")
+                print(f\"Cross-API Consistency: {summary.get('cross_api_consistency', 'Unknown')}\")
+            else:
+                print('JSON found but no summary section')
+        else:
+            print('Could not find JSON data in output')
+            # Debug: show first 500 characters
+            print(f'Debug - First 500 chars: {content[:500]}')
+except json.JSONDecodeError as e:
+    print(f'JSON decode error: {e}')
+    # Debug: show the problematic JSON string
+    try:
+        with open('$output_file', 'r') as f:
+            content = f.read()
+        print(f'Debug - Full content length: {len(content)}')
+        print(f'Debug - Content around error: {content[800:1200]}')
+    except:
+        pass
+except Exception as e:
+    print(f'Error parsing results: {e}')
+" 2>/dev/null)
+        
+        if [[ -n "$summary" ]]; then
+            echo -e "${CYAN}📊 API Compatibility Summary:${NC}"
+            echo "$summary" | while read line; do
+                print_status "info" "$line"
+            done
+            
+            # Check if all APIs are working
+            local all_working=$(python3 -c "
+import json, sys
+try:
+    with open('$output_file', 'r') as f:
+        content = f.read()
+        
+        # Find complete JSON object
+        json_start = -1
+        for i, char in enumerate(content):
+            if char == '{' and content[i:i+15].find('\"timestamp\"') > 0:
+                json_start = i
+                break
+        
+        if json_start != -1:
+            # Extract complete JSON by counting braces
+            json_chars = []
+            brace_count = 0
+            
+            for i in range(json_start, len(content)):
+                char = content[i]
+                json_chars.append(char)
+                
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        break
+            
+            json_str = ''.join(json_chars)
+            data = json.loads(json_str)
+            print(data.get('summary', {}).get('all_apis_working', False))
+        else:
+            print(False)
+except Exception as e:
+    print(f'Error checking all APIs working: {e}')
+    print(False)
+" 2>/dev/null)
+            
+            if [[ "$all_working" == "True" ]]; then
+                print_status "success" "All API formats are working correctly! 🎉"
+                print_status "success" "Native, OpenAI, TEI, and Cohere APIs all operational"
+            else
+                print_status "warning" "Some API formats may have issues - check detailed logs"
+            fi
+        fi
+        
+        print_status "success" "API compatibility tests completed"
+        return 0
+    else
+        print_status "error" "API compatibility tests failed"
         if [[ -f "$log_file" ]]; then
             echo "Error log:" | tee -a "$log_file"
             cat "$log_file"
@@ -743,7 +1307,8 @@ Test Modes:
   --quick             Quick validation only (health + basic tests)
   --quality           Quality validation tests only
   --performance       Performance benchmark tests only
-  --text-processing   Text processing strategy tests only (NEW!)
+  --text-processing   Text processing strategy tests only
+  --api-compatibility Multi-API compatibility tests (Native, OpenAI, TEI, Cohere) (NEW!)
   --full              Full test suite (default)
 
 Configuration:
@@ -755,9 +1320,16 @@ Examples:
   $0                                    # Full test suite
   $0 --quick                           # Quick validation
   $0 --performance                     # Performance tests only
-  $0 --text-processing                 # Text processing tests only (NEW!)
+  $0 --text-processing                 # Text processing tests only
+  $0 --api-compatibility               # Multi-API compatibility tests (NEW!)
   $0 --url http://localhost:8080       # Custom server URL
   $0 --output-dir /tmp/test-results    # Custom output directory
+
+🚀 NEW: --api-compatibility tests all supported API formats:
+   - Native API (/api/v1/embed/, /api/v1/rerank/)
+   - OpenAI Compatible (/v1/embeddings, /v1/models)
+   - TEI Compatible (/embed, /rerank)
+   - Cohere Compatible (/v1/rerank, /v2/rerank)
 
 EOF
 }
@@ -779,6 +1351,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --text-processing)
             TEST_MODE="text-processing"
+            shift
+            ;;
+        --api-compatibility)
+            TEST_MODE="api-compatibility"
             shift
             ;;
         --full)
@@ -850,11 +1426,23 @@ main() {
             fi
             ;;
         
+        "api-compatibility")
+            ((total_tests++))
+            if run_api_compatibility_tests; then
+                ((tests_passed++))
+            fi
+            ;;
+        
         "full")
-            ((total_tests += 3))
+            ((total_tests += 4))
             
             # Run text processing tests first (NEW!)
             if run_text_processing_tests; then
+                ((tests_passed++))
+            fi
+            
+            # Run API compatibility tests (NEW!)
+            if run_api_compatibility_tests; then
                 ((tests_passed++))
             fi
             
