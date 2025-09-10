@@ -574,32 +574,33 @@ run_api_compatibility_tests() {
     export TEST_SERVER_URL="$SERVER_URL"
     
     # Run pytest-based API tests
+    # Run pytest-based API tests (informational only)
     print_step "Running Native API tests..."
-    if cd "$PROJECT_ROOT" && python -m pytest tests/test_native_api.py -v >> "$log_file" 2>&1; then
+    if cd "$PROJECT_ROOT" && TEST_SERVER_URL="$SERVER_URL" python -m pytest tests/test_native_api.py -v >> "$log_file" 2>&1; then
         print_status "success" "Native API tests passed"
     else
-        print_status "warning" "Native API tests had issues (check log)"
+        print_status "info" "Native API pytest had issues (comprehensive test below)"
     fi
     
     print_step "Running OpenAI compatibility tests..."
-    if cd "$PROJECT_ROOT" && python -m pytest tests/test_openai_api.py -v >> "$log_file" 2>&1; then
+    if cd "$PROJECT_ROOT" && TEST_SERVER_URL="$SERVER_URL" python -m pytest tests/test_openai_api.py -v >> "$log_file" 2>&1; then
         print_status "success" "OpenAI API tests passed"
     else
-        print_status "warning" "OpenAI API tests had issues (check log)"
+        print_status "info" "OpenAI API pytest had issues (comprehensive test below)"
     fi
     
     print_step "Running TEI compatibility tests..."
-    if cd "$PROJECT_ROOT" && python -m pytest tests/test_tei_api.py -v >> "$log_file" 2>&1; then
+    if cd "$PROJECT_ROOT" && TEST_SERVER_URL="$SERVER_URL" python -m pytest tests/test_tei_api.py -v >> "$log_file" 2>&1; then
         print_status "success" "TEI API tests passed"
     else
-        print_status "warning" "TEI API tests had issues (check log)"
+        print_status "info" "TEI API pytest had issues (comprehensive test below)"
     fi
     
     print_step "Running Cohere compatibility tests..."
-    if cd "$PROJECT_ROOT" && python -m pytest tests/test_cohere_api.py -v >> "$log_file" 2>&1; then
+    if cd "$PROJECT_ROOT" && TEST_SERVER_URL="$SERVER_URL" python -m pytest tests/test_cohere_api.py -v >> "$log_file" 2>&1; then
         print_status "success" "Cohere API tests passed"
     else
-        print_status "warning" "Cohere API tests had issues (check log)"
+        print_status "info" "Cohere API pytest had issues (comprehensive test below)"
     fi
     
     # Run comprehensive compatibility check

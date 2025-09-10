@@ -5,13 +5,14 @@ Test script for Cohere-compatible reranking endpoints.
 """
 
 import json
+import os
 import pytest
 import requests
 import time
 from typing import Dict, Any
 
-# Server configuration
-BASE_URL = "http://localhost:9000"  # Default server URL
+# Server configuration - use environment variable or default
+BASE_URL = os.getenv("TEST_SERVER_URL", "http://localhost:9000")
 
 def test_cohere_v1_rerank():
     """Test Cohere v1 rerank endpoint."""
