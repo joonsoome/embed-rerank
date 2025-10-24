@@ -66,7 +66,7 @@ def convert_to_internal_request(cohere_request: CohereRerankRequest) -> RerankRe
         query=cohere_request.query,
         passages=passages,
         top_k=top_k,
-        return_documents=cohere_request.return_documents or False
+        return_documents=cohere_request.return_documents or False,
     )
 
 
@@ -81,10 +81,7 @@ def convert_to_cohere_response(internal_response, cohere_request: CohereRerankRe
 
     for result in internal_response.results:
         # Create base result with index and relevance score
-        cohere_result = CohereRerankResult(
-            index=result.index,
-            relevance_score=result.score
-        )
+        cohere_result = CohereRerankResult(index=result.index, relevance_score=result.score)
 
         # Add document if requested
         if cohere_request.return_documents:
@@ -96,10 +93,7 @@ def convert_to_cohere_response(internal_response, cohere_request: CohereRerankRe
 
 
 @router.post("/v1/rerank", response_model=CohereRerankResponse)
-async def rerank_v1(
-    request: CohereRerankRequest,
-    service: RerankingService = Depends(get_reranking_service)
-):
+async def rerank_v1(request: CohereRerankRequest, service: RerankingService = Depends(get_reranking_service)):
     """
     Cohere-compatible reranking endpoint (v1).
 
@@ -130,10 +124,7 @@ async def rerank_v1(
 
 
 @router.post("/v2/rerank", response_model=CohereRerankResponse)
-async def rerank_v2(
-    request: CohereRerankRequest,
-    service: RerankingService = Depends(get_reranking_service)
-):
+async def rerank_v2(request: CohereRerankRequest, service: RerankingService = Depends(get_reranking_service)):
     """
     Cohere-compatible reranking endpoint (v2).
 

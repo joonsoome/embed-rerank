@@ -83,6 +83,7 @@ async def lifespan(app: FastAPI):
 
         # 🎯 Initialize embedding service for OpenAI and TEI compatibility
         from .services.embedding_service import EmbeddingService
+
         embedding_service = EmbeddingService(backend_manager)
 
         # 🔗 Set embedding service for OpenAI and TEI routers
@@ -358,8 +359,9 @@ def main():
 
     # Test options
     test_group = parser.add_argument_group('testing', 'Performance and quality testing options')
-    test_group.add_argument("--test", choices=['quick', 'quality', 'performance', 'full'],
-                           help="Run tests instead of starting server")
+    test_group.add_argument(
+        "--test", choices=['quick', 'quality', 'performance', 'full'], help="Run tests instead of starting server"
+    )
     test_group.add_argument("--test-url", help="Server URL for testing (default: http://localhost:PORT)")
     test_group.add_argument("--test-output", help="Test output directory (default: ./test-results)")
 
@@ -462,9 +464,7 @@ def run_quick_test(test_url, output_dir):
     print("  • Testing basic embedding...")
     try:
         response = requests.post(
-            f"{test_url}/api/v1/embed/",
-            json={"texts": ["Hello world", "Test embedding"]},
-            timeout=30
+            f"{test_url}/api/v1/embed/", json={"texts": ["Hello world", "Test embedding"]}, timeout=30
         )
 
         if response.status_code == 200:
@@ -473,7 +473,7 @@ def run_quick_test(test_url, output_dir):
                 results["results"]["basic_embedding"] = {
                     "status": "success",
                     "response_time_ms": data.get("processing_time", 0) * 1000,
-                    "vector_dimension": len(data["vectors"][0]) if data["vectors"] else 0
+                    "vector_dimension": len(data["vectors"][0]) if data["vectors"] else 0,
                 }
                 dim = len(data['vectors'][0])
                 ms = data.get('processing_time', 0) * 1000
@@ -495,9 +495,9 @@ def run_quick_test(test_url, output_dir):
             f"{test_url}/api/v1/rerank/",
             json={
                 "query": "machine learning",
-                "passages": ["AI and ML are fascinating", "I love pizza", "Deep learning is a subset of ML"]
+                "passages": ["AI and ML are fascinating", "I love pizza", "Deep learning is a subset of ML"],
             },
-            timeout=30
+            timeout=30,
         )
 
         print(f"    🔍 Debug - Status code: {response.status_code}")
@@ -511,7 +511,7 @@ def run_quick_test(test_url, output_dir):
             if "results" in data and len(data["results"]) == 3:
                 results["results"]["reranking"] = {
                     "status": "success",
-                    "response_time_ms": data.get("processing_time", 0) * 1000
+                    "response_time_ms": data.get("processing_time", 0) * 1000,
                 }
                 print(f"    ✅ Reranking: 3 passages ranked in {data.get('processing_time', 0)*1000:.1f}ms")
             else:
@@ -555,12 +555,7 @@ def run_performance_test(test_url, output_dir):
 
     print("⚡ Running Performance Benchmark Tests...")
 
-    results = {
-        "test_type": "performance",
-        "timestamp": time.time(),
-        "server_url": test_url,
-        "results": {}
-    }
+    results = {"test_type": "performance", "timestamp": time.time(), "server_url": test_url, "results": {}}
 
     # Latency test
     print("  • Testing embedding latency...")
@@ -569,11 +564,7 @@ def run_performance_test(test_url, output_dir):
     for i in range(10):
         start = time.time()
         try:
-            response = requests.post(
-                f"{test_url}/api/v1/embed/",
-                json={"texts": [f"Test sentence {i}"]},
-                timeout=30
-            )
+            response = requests.post(f"{test_url}/api/v1/embed/", json={"texts": [f"Test sentence {i}"]}, timeout=30)
             end = time.time()
 
             if response.status_code == 200:
@@ -590,7 +581,7 @@ def run_performance_test(test_url, output_dir):
             "min_ms": min(latencies),
             "max_ms": max(latencies),
             "p95_ms": sorted(latencies)[int(0.95 * len(latencies))],
-            "sample_count": len(latencies)
+            "sample_count": len(latencies),
         }
         print(f"    ✅ Latency: {statistics.mean(latencies):.1f}ms avg, {max(latencies):.1f}ms max")
 
@@ -603,7 +594,7 @@ def run_performance_test(test_url, output_dir):
             response = requests.post(
                 f"{test_url}/api/v1/embed/",
                 json={"texts": [f"Throughput test sentence {i}" for i in range(batch_size)]},
-                timeout=60
+                timeout=60,
             )
             end = time.time()
 
@@ -630,9 +621,7 @@ def run_performance_test(test_url, output_dir):
         try:
             start = time.time()
             response = requests.post(
-                f"{test_url}/api/v1/embed/",
-                json={"texts": [f"Concurrent test {request_id}"]},
-                timeout=30
+                f"{test_url}/api/v1/embed/", json={"texts": [f"Concurrent test {request_id}"]}, timeout=30
             )
             end = time.time()
             return response.status_code == 200, (end - start) * 1000
@@ -651,7 +640,7 @@ def run_performance_test(test_url, output_dir):
         "total_requests": 5,
         "successful_requests": successful_requests,
         "success_rate": successful_requests / 5,
-        "mean_latency_ms": statistics.mean(concurrent_latencies) if concurrent_latencies else 0
+        "mean_latency_ms": statistics.mean(concurrent_latencies) if concurrent_latencies else 0,
     }
 
     print(f"    ✅ Concurrency: {successful_requests}/5 successful ({successful_requests/5*100:.0f}%)")
@@ -668,9 +657,7 @@ def run_performance_test(test_url, output_dir):
     if "latency" in results["results"]:
         lat = results["results"]["latency"]
         peak = max(throughput_results.values()) if throughput_results else 0
-        print(
-            f"📈 Summary: {lat['mean_ms']:.1f}ms avg latency, {peak:.1f} texts/sec peak throughput"
-        )
+        print(f"📈 Summary: {lat['mean_ms']:.1f}ms avg latency, {peak:.1f} texts/sec peak throughput")
 
 
 if __name__ == "__main__":

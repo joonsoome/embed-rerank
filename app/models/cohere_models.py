@@ -22,7 +22,7 @@ class CohereRerankRequest(BaseModel):
         description="The user query",
         min_length=1,
         max_length=2048,
-        json_schema_extra={"example": "What is machine learning?"}
+        json_schema_extra={"example": "What is machine learning?"},
     )
     documents: List[str] = Field(
         ...,
@@ -33,26 +33,24 @@ class CohereRerankRequest(BaseModel):
             "example": [
                 "Machine learning is a subset of artificial intelligence.",
                 "Deep learning uses neural networks with many layers.",
-                "Natural language processing helps computers understand text."
+                "Natural language processing helps computers understand text.",
             ]
-        }
+        },
     )
     model: Optional[str] = Field(
-        None,
-        description="The Rerank model to use (e.g., 'rerank-v3.5')",
-        json_schema_extra={"example": "rerank-v3.5"}
+        None, description="The Rerank model to use (e.g., 'rerank-v3.5')", json_schema_extra={"example": "rerank-v3.5"}
     )
     top_n: Optional[int] = Field(
         None,
         description="The number of top reranked documents to return",
         ge=1,
         le=100,
-        json_schema_extra={"example": 5}
+        json_schema_extra={"example": 5},
     )
     return_documents: Optional[bool] = Field(
         False,
         description="Whether to return the full document objects in the response",
-        json_schema_extra={"example": False}
+        json_schema_extra={"example": False},
     )
 
     @model_validator(mode='before')
@@ -74,14 +72,10 @@ class CohereRerankRequest(BaseModel):
                 elif isinstance(item, dict):
                     text = item.get('text') or item.get('content') or item.get('body') or item.get('value')
                     if text is None:
-                        raise ValueError(
-                            f"Document at index {i} must be a string or an object with a 'text' field"
-                        )
+                        raise ValueError(f"Document at index {i} must be a string or an object with a 'text' field")
                     normalized.append(str(text))
                 else:
-                    raise ValueError(
-                        f"Document at index {i} must be a string or an object with a 'text' field"
-                    )
+                    raise ValueError(f"Document at index {i} must be a string or an object with a 'text' field")
             data['documents'] = normalized
 
         # Accept 'top_k' as alias for 'top_n'

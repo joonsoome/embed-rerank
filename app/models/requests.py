@@ -30,9 +30,7 @@ class EmbedRequest(BaseModel):
         description="Whether to automatically truncate texts exceeding token limits",
         json_schema_extra={"example": True},
     )
-    truncation_strategy: Optional[
-        Literal["smart_truncate", "truncate", "extract", "error"]
-    ] = Field(
+    truncation_strategy: Optional[Literal["smart_truncate", "truncate", "extract", "error"]] = Field(
         "smart_truncate",
         description=(
             "Strategy for handling long texts: smart_truncate (preserve sentences), "
@@ -150,9 +148,7 @@ class RerankRequest(BaseModel):
                         raise ValueError(f"Document at index {i} must be a string or an object with a 'text' field")
                     normalized.append(str(text))
                 else:
-                    raise ValueError(
-                        f"Document at index {i} must be a string or an object with a 'text' field"
-                    )
+                    raise ValueError(f"Document at index {i} must be a string or an object with a 'text' field")
 
             data['passages'] = normalized
 

@@ -43,6 +43,7 @@ except ImportError as e:
     logger.warning("⚠️ MLX not available - Apple Silicon required", error=str(e))
     mx = None  # type: ignore
 
+
 # ---------------------------------------------------------------------------
 # MLX array compatibility helper
 # Newer MLX versions removed `mx.array` in favor of `mx.asarray`/`mx.numpy.array`.
@@ -59,6 +60,7 @@ def _mx_array(x):
     # using this helper should only run when MLX is available, but be defensive.
     if not MLX_AVAILABLE or mx is None:
         import numpy as _np
+
         return _np.array(x)
 
     # Try legacy API
@@ -84,6 +86,7 @@ def _mx_array(x):
 
     # Final fallback (should be unreachable on valid MLX installs)
     import numpy as _np
+
     return _np.array(x)
 
 

@@ -12,8 +12,10 @@ import time
 from typing import Dict, Any
 import socket
 from urllib.parse import urlparse
+
 # Server configuration - use environment variable or default
 BASE_URL = os.getenv("TEST_SERVER_URL", "http://localhost:9000")
+
 
 # Skip tests if the target server is not available to avoid noisy connection errors.
 @pytest.fixture(autouse=True)
@@ -27,6 +29,7 @@ def ensure_server_available():
     except Exception:
         pytest.skip(f"Server at {BASE_URL} not available, skipping test")
 
+
 def test_cohere_v1_rerank():
     """Test Cohere v1 rerank endpoint."""
 
@@ -38,10 +41,10 @@ def test_cohere_v1_rerank():
             "Deep learning uses neural networks with many layers.",
             "Natural language processing helps computers understand text.",
             "Cats are fluffy animals that like to sleep.",
-            "Python is a popular programming language."
+            "Python is a popular programming language.",
         ],
         "top_n": 3,
-        "return_documents": True
+        "return_documents": True,
     }
 
     response = requests.post(url, json=payload, timeout=30)
@@ -74,10 +77,10 @@ def test_cohere_v2_rerank():
             "MLX framework is optimized for Apple Silicon.",
             "Embedding models run efficiently on M1 and M2 chips.",
             "Traditional x86 processors consume more power.",
-            "GPU acceleration is important for machine learning."
+            "GPU acceleration is important for machine learning.",
         ],
         "top_n": 2,
-        "return_documents": False
+        "return_documents": False,
     }
 
     response = requests.post(url, json=payload, timeout=30)
@@ -106,12 +109,9 @@ def test_cohere_return_documents():
     url = f"{BASE_URL}/v1/rerank"
     payload = {
         "query": "machine learning",
-        "documents": [
-            "Machine learning is AI subset",
-            "Deep learning uses neural networks"
-        ],
+        "documents": ["Machine learning is AI subset", "Deep learning uses neural networks"],
         "top_n": 2,
-        "return_documents": True
+        "return_documents": True,
     }
 
     response = requests.post(url, json=payload, timeout=30)
@@ -140,26 +140,14 @@ def test_performance_comparison():
         "Python is widely used for machine learning and data science applications.",
         "The cat sat on the mat in the sunny garden.",
         "Today is a beautiful day for going to the beach.",
-        "Quantum computing could revolutionize certain computational problems."
+        "Quantum computing could revolutionize certain computational problems.",
     ]
 
     # Test different endpoints
     endpoints = [
-        ("/api/v1/rerank/", {
-            "query": query,
-            "passages": documents,
-            "top_k": 5
-        }),
-        ("/v1/rerank", {
-            "query": query,
-            "documents": documents,
-            "top_n": 5
-        }),
-        ("/v2/rerank", {
-            "query": query,
-            "documents": documents,
-            "top_n": 5
-        })
+        ("/api/v1/rerank/", {"query": query, "passages": documents, "top_k": 5}),
+        ("/v1/rerank", {"query": query, "documents": documents, "top_n": 5}),
+        ("/v2/rerank", {"query": query, "documents": documents, "top_n": 5}),
     ]
 
     for endpoint, payload in endpoints:
