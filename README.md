@@ -30,6 +30,38 @@ For comprehensive troubleshooting, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHO
 
 ---
 
+## 🍎 MLX Compatibility Note (mx.array → asarray)
+
+Recent MLX versions removed `mx.array` in favor of `mx.asarray` (and `mx.numpy.array`). This repository includes a compatibility helper that automatically forwards to the appropriate API, so Apple Silicon embeddings continue to work across MLX versions.
+
+What changed:
+- Internal `mx.array(...)` calls now use a helper that tries, in order: `mx.array` → `mx.asarray` → `mx.numpy.array`.
+- Placeholder embedding fallback now respects the model configuration using `config['hidden_size']` (previously some error paths defaulted to 4096).
+
+Why this matters:
+- Prevents runtime error: `module 'mlx.core' has no attribute 'array'` on newer MLX.
+- Ensures embedding dimension matches the loaded model, avoiding vector size mismatches (e.g., when updating existing ChromaDB collections).
+
+Quick validation (Apple Silicon + MLX installed):
+```python
+import asyncio
+from app.backends.factory import BackendFactory
+
+async def main():
+    backend = BackendFactory.create_backend("mlx", "mlx-community/Qwen3-Embedding-4B-4bit-DWQ")
+    await backend.load_model()
+    res = await backend.embed_texts(["hello", "world"])
+    print("shape:", res.vectors.shape)  # (2, <model_hidden_size>)
+
+asyncio.run(main())
+```
+
+Notes:
+- Optional dependency for MLX (macOS only): `pip install "embed-rerank[mlx]"` or see `pyproject.toml` (`mlx>=0.4.0`, `mlx-lm>=0.2.0`).
+- If you maintain an existing ChromaDB collection, verify that new embeddings match the existing dimension before upsert.
+
+---
+
 ## 📄 License
 
 MIT License - build amazing things with this code!" /></a>

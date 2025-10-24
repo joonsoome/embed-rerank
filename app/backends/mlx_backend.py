@@ -41,6 +41,50 @@ try:
 except ImportError as e:
     MLX_AVAILABLE = False
     logger.warning("⚠️ MLX not available - Apple Silicon required", error=str(e))
+    mx = None  # type: ignore
+
+# ---------------------------------------------------------------------------
+# MLX array compatibility helper
+# Newer MLX versions removed `mx.array` in favor of `mx.asarray`/`mx.numpy.array`.
+# This helper provides a stable way to create MLX arrays across versions.
+# ---------------------------------------------------------------------------
+def _mx_array(x):
+    """Create an MLX array in a version-compatible way.
+
+    Tries `mx.array` (older MLX), then `mx.asarray` (newer MLX), then
+    `mx.numpy.array`. Only falls back to NumPy as a last resort which should
+    not happen when MLX is available.
+    """
+    # If MLX isn't available, return a NumPy array as a last resort. Code paths
+    # using this helper should only run when MLX is available, but be defensive.
+    if not MLX_AVAILABLE or mx is None:
+        import numpy as _np
+        return _np.array(x)
+
+    # Try legacy API
+    if hasattr(mx, "array"):
+        try:
+            return mx.array(x)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    # Try modern API
+    if hasattr(mx, "asarray"):
+        try:
+            return mx.asarray(x)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    # Try via mx.numpy
+    if hasattr(mx, "numpy") and hasattr(mx.numpy, "array"):
+        try:
+            return mx.numpy.array(x)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    # Final fallback (should be unreachable on valid MLX installs)
+    import numpy as _np
+    return _np.array(x)
 
 
 class MLXBackend(BaseBackend):
@@ -303,7 +347,7 @@ class MLXBackend(BaseBackend):
                     vec = rng.standard_normal(self.hidden_size).astype('float32')
                     vec /= np.linalg.norm(vec) + 1e-8
                     embeddings.append(vec)
-                return mx.array(_np.stack(embeddings))
+                return _mx_array(_np.stack(embeddings))
 
         return PlaceholderModel(hidden_size)
 
@@ -446,8 +490,8 @@ class MLXBackend(BaseBackend):
                     return_tensors='np',
                 )
 
-                # Convert to MLX arrays
-                input_ids = mx.array(batch_encodings['input_ids'])
+                # Convert to MLX arrays (compat helper for MLX API changes)
+                input_ids = _mx_array(batch_encodings['input_ids'])
 
                 # Generate embeddings using MLX model
                 with mx.stream(mx.cpu):  # Use CPU stream for stable inference
@@ -477,7 +521,8 @@ class MLXBackend(BaseBackend):
 
     def _generate_placeholder_embeddings(self, texts: List[str]) -> np.ndarray:
         """Generate placeholder embeddings for fallback."""
-        embedding_dim = getattr(self.config, 'hidden_size', 4096) if self.config else 4096
+        # self.config is a dict; use dict.get to reflect actual model settings
+        embedding_dim = self.config.get('hidden_size', 4096) if self.config else 4096
 
         # Use text hash for deterministic embeddings
         embeddings = []
@@ -504,8 +549,8 @@ class MLXBackend(BaseBackend):
         """
         try:
             # Convert to MLX arrays for potential acceleration
-            query_mx = mx.array(query_embedding)
-            passages_mx = mx.array(passage_embeddings)
+            query_mx = _mx_array(query_embedding)
+            passages_mx = _mx_array(passage_embeddings)
 
             # Normalize embeddings
             query_norm = query_mx / mx.linalg.norm(query_mx)
