@@ -4,7 +4,7 @@ Pydantic models for API requests.
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class EmbedRequest(BaseModel):
@@ -24,7 +24,7 @@ class EmbedRequest(BaseModel):
         True, description="Whether to normalize embeddings to unit length", json_schema_extra={"example": True}
     )
 
-    # 🚀 텍스트 처리 옵션 추가!
+    # Text processing options added
     auto_truncate: Optional[bool] = Field(
         True,
         description="Whether to automatically truncate texts exceeding token limits",
@@ -120,6 +120,47 @@ class RerankRequest(BaseModel):
     return_documents: Optional[bool] = Field(
         True, description="Whether to return the original passage texts", json_schema_extra={"example": True}
     )
+
+    # Accept OpenWebUI/Cohere-style payloads by aliasing `documents` -> `passages`
+    # and `top_n` -> `top_k` before validation.
+    @model_validator(mode='before')
+    @classmethod
+    def _normalize_input(cls, data):
+        """Support alternate field names used by some clients.
+
+        - documents: list[str] or list[{text: str}] -> passages
+        - top_n: int -> top_k
+        """
+        if not isinstance(data, dict):
+            return data
+
+        # Map documents -> passages
+        if 'passages' not in data and 'documents' in data:
+            docs = data.get('documents')
+            if not isinstance(docs, list):
+                raise ValueError("documents must be a list")
+
+            normalized: List[str] = []
+            for i, item in enumerate(docs):
+                if isinstance(item, str):
+                    normalized.append(item)
+                elif isinstance(item, dict):
+                    text = item.get('text') or item.get('content') or item.get('body') or item.get('value')
+                    if text is None:
+                        raise ValueError(f"Document at index {i} must be a string or an object with a 'text' field")
+                    normalized.append(str(text))
+                else:
+                    raise ValueError(
+                        f"Document at index {i} must be a string or an object with a 'text' field"
+                    )
+
+            data['passages'] = normalized
+
+        # Map top_n -> top_k when provided by Cohere/OpenWebUI-style clients
+        if 'top_k' not in data and 'top_n' in data:
+            data['top_k'] = data.get('top_n')
+
+        return data
 
     @field_validator('query')
     @classmethod

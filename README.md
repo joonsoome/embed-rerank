@@ -293,6 +293,14 @@ curl -X POST "http://localhost:9000/api/v1/rerank/"
   -d '{"query": "machine learning", "passages": ["AI is cool", "Dogs are pets", "MLX is fast"]}'
 ```
 
+Note: The native rerank endpoint also accepts Cohere/OpenWebUI-style payloads using `documents` instead of `passages` and `top_n` instead of `top_k`:
+
+```bash
+curl -X POST "http://localhost:9000/api/v1/rerank/" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "machine learning", "documents": ["AI is cool", "Dogs are pets", "MLX is fast"], "top_n": 3}'
+```
+
 ---
 
 ## 🧪 Performance Testing & Validation
