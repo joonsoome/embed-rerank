@@ -52,75 +52,69 @@ async def get_reranking_service(manager: BackendManager = Depends(get_backend_ma
 def convert_to_internal_request(cohere_request: CohereRerankRequest) -> RerankRequest:
     """
     Convert Cohere API request to internal RerankRequest format.
-    
-    🎯 MLX Performance Bridge: Seamlessly converting Cohere format to our 
+
+    🎯 MLX Performance Bridge: Seamlessly converting Cohere format to our
     high-performance internal format while preserving all semantic meaning!
     """
     # Convert documents to passages (same content, different naming)
     passages = cohere_request.documents
-    
+
     # Convert top_n to top_k (default to length if not specified)
     top_k = cohere_request.top_n if cohere_request.top_n is not None else len(passages)
-    
+
     return RerankRequest(
         query=cohere_request.query,
         passages=passages,
         top_k=top_k,
-        return_documents=cohere_request.return_documents or False
+        return_documents=cohere_request.return_documents or False,
     )
 
 
 def convert_to_cohere_response(internal_response, cohere_request: CohereRerankRequest) -> CohereRerankResponse:
     """
     Convert internal RerankResponse to Cohere API format.
-    
-    🚀 Apple Silicon Speed: Transforming our MLX-optimized results into 
+
+    🚀 Apple Silicon Speed: Transforming our MLX-optimized results into
     Cohere-compatible format while maintaining performance excellence!
     """
     results = []
-    
+
     for result in internal_response.results:
         # Create base result with index and relevance score
-        cohere_result = CohereRerankResult(
-            index=result.index,
-            relevance_score=result.score
-        )
-        
+        cohere_result = CohereRerankResult(index=result.index, relevance_score=result.score)
+
         # Add document if requested
         if cohere_request.return_documents:
             cohere_result.document = CohereDocument(text=result.text or "")
-        
+
         results.append(cohere_result)
-    
+
     return CohereRerankResponse(results=results)
 
 
 @router.post("/v1/rerank", response_model=CohereRerankResponse)
-async def rerank_v1(
-    request: CohereRerankRequest, 
-    service: RerankingService = Depends(get_reranking_service)
-):
+async def rerank_v1(request: CohereRerankRequest, service: RerankingService = Depends(get_reranking_service)):
     """
     Cohere-compatible reranking endpoint (v1).
-    
-    🎯 MLX-Powered Cohere Compatibility: Experience the lightning-fast 
+
+    🎯 MLX-Powered Cohere Compatibility: Experience the lightning-fast
     performance of Apple MLX through the familiar Cohere API interface!
-    
+
     Perfect for developers migrating from Cohere to self-hosted solutions
     while gaining significant performance improvements on Apple Silicon.
     """
     try:
         # Convert Cohere request to internal format
         internal_request = convert_to_internal_request(request)
-        
+
         # 🚀 Apple MLX Magic: Process with our high-performance backend!
         internal_response = await service.rerank_passages(internal_request)
-        
+
         # Convert back to Cohere format
         cohere_response = convert_to_cohere_response(internal_response, request)
-        
+
         return cohere_response
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
     except RuntimeError as e:
@@ -130,16 +124,13 @@ async def rerank_v1(
 
 
 @router.post("/v2/rerank", response_model=CohereRerankResponse)
-async def rerank_v2(
-    request: CohereRerankRequest, 
-    service: RerankingService = Depends(get_reranking_service)
-):
+async def rerank_v2(request: CohereRerankRequest, service: RerankingService = Depends(get_reranking_service)):
     """
     Cohere-compatible reranking endpoint (v2).
-    
+
     🚀 Next-Gen MLX Performance: Same blazing-fast Apple Silicon optimization,
     now available through Cohere v2 API format for maximum compatibility!
-    
+
     Features the latest optimizations while maintaining full Cohere API compliance.
     """
     # v2 uses the same logic as v1 for now
