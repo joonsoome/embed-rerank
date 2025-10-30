@@ -274,6 +274,31 @@ response = client.embeddings.create(
     model="text-embedding-ada-002"
 )
 # 🚀 10x faster than OpenAI, same code!
+
+"""
+Base64 encoding support
+-----------------------
+
+For OpenAI-compatible calls, you can request base64-encoded embeddings by setting `encoding_format` to `"base64"`. This is useful when transporting vectors through systems that expect strings only.
+
+Example (Python OpenAI SDK):
+
+```python
+response = client.embeddings.create(
+    input=["Hello world"],
+    model="text-embedding-ada-002",
+    encoding_format="base64",  # returns base64-encoded float32 bytes
+)
+
+# embedding string is base64; decode if you need floats again
+import base64, numpy as np
+arr = np.frombuffer(base64.b64decode(response.data[0].embedding), dtype=np.float32)
+```
+
+Notes:
+- `encoding_format` defaults to `"float"` (list[float]).
+- `dimensions` is accepted and will truncate/pad to the requested size when supported.
+"""
 ```
 
 ### TEI Compatible
@@ -310,6 +335,25 @@ response = requests.post("http://localhost:9000/v1/rerank", json={
     "top_n": 2
 })
 ```
+
+---
+
+## 🧩 LightRAG Integration
+
+We validated an end-to-end workflow using LightRAG with this service:
+- Embeddings via the OpenAI-compatible endpoint (`/v1/embeddings`)
+- Reranking via the Cohere-compatible endpoint (`/v1/rerank` or `/v2/rerank`)
+
+Results: the integration tests succeeded using OpenAI embeddings and Cohere reranking.
+
+Qwen Embedding similarity scaling note: when using the Qwen Embedding model, we observed cosine similarity values that appear very small (e.g., `0.02`, `0.03`). This is expected due to vector scaling differences and does not indicate poor retrieval by itself. As a starting point, we recommend disabling the retrieval threshold in LightRAG to avoid filtering out good matches prematurely:
+
+```
+# === Retrieval threshold ===
+COSINE_THRESHOLD=0.0
+```
+
+Adjust upward later based on your dataset and evaluation results.
 
 ### Native API
 

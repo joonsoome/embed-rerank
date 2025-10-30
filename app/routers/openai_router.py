@@ -17,6 +17,8 @@ Transform your OpenAI embeddings workflow into an Apple Silicon powerhouse!
 
 import time
 from typing import Any, Dict, List, Optional, Union
+import base64
+import numpy as np
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -149,7 +151,8 @@ class OpenAIEmbeddingData(BaseModel):
     """
 
     object: str = Field(default="embedding", description="Object type identifier")
-    embedding: List[float] = Field(..., description="The embedding vector")
+    # Allow either float list (default) or base64 string when encoding_format="base64"
+    embedding: Union[List[float], str] = Field(..., description="The embedding vector (float list or base64 string)")
     index: int = Field(..., description="Index of the input text")
 
 
@@ -296,8 +299,33 @@ async def create_embeddings(
         # 📊 Calculate comprehensive timing metrics
         total_time = time.time() - start_time
 
-        # 🔄 Transform MLX response to enhanced OpenAI format
-        embedding_data = [OpenAIEmbeddingData(embedding=vector, index=i) for i, vector in enumerate(mlx_result.vectors)]
+        # 🔄 Optionally adjust dimensions if requested
+        vectors: List[List[float]] = mlx_result.vectors
+        target_dims = request.dimensions
+        if target_dims is not None and target_dims > 0:
+            adjusted: List[List[float]] = []
+            for v in vectors:
+                if len(v) == target_dims:
+                    adjusted.append(v)
+                elif len(v) > target_dims:
+                    # Truncate to requested dimensions
+                    adjusted.append(v[:target_dims])
+                else:
+                    # Pad with zeros up to requested dimensions
+                    padded = v + [0.0] * (target_dims - len(v))
+                    adjusted.append(padded)
+            vectors = adjusted
+
+        # 🔄 Transform MLX response to enhanced OpenAI format (support base64 when requested)
+        embedding_data: List[OpenAIEmbeddingData] = []
+        if (request.encoding_format or "float").lower() == "base64":
+            for i, v in enumerate(vectors):
+                arr = np.asarray(v, dtype=np.float32)
+                b64 = base64.b64encode(arr.tobytes()).decode("ascii")
+                embedding_data.append(OpenAIEmbeddingData(embedding=b64, index=i))
+        else:
+            for i, v in enumerate(vectors):
+                embedding_data.append(OpenAIEmbeddingData(embedding=v, index=i))
 
         # 📈 Calculate token usage (approximate word-based counting)
         total_tokens = sum(len(text.split()) for text in texts)

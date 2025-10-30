@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.0] - 2025-09-10
+ 
+## [1.2.3] - 2025-10-30
+
+### Added
+- OpenAI compatibility: base64 encoding support via `encoding_format="base64"` for `/v1/embeddings`.
+- OpenAI compatibility: optional `dimensions` handling (truncate/pad to requested size).
+
+### Documentation
+- README: Added LightRAG integration note (OpenAI embeddings + Cohere reranking tested successfully).
+- README: Added Qwen Embedding similarity scaling note and recommended starting threshold `COSINE_THRESHOLD=0.0` for LightRAG.
+- README: Example for requesting base64-encoded embeddings and decoding back to float32.
+
+### Notes
+- These updates maintain full compatibility with existing OpenAI SDK usage; default remains `encoding_format="float"`.
+
 
 ### Added
 - 🆕 **Cohere API v1/v2 Compatibility**: Full support for Cohere reranking API
