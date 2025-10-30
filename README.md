@@ -1,10 +1,16 @@
 # 🔥 Single Model Embedding & Reranking API
 
-<div align="center">
-<strong>Lightning-fast local embeddings & reranking for Apple Silicon (MLX-first, OpenAI & TEI compatible)</strong>
-<br/><br/>
-<a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/v/embed-rerank?logo=pypi&logoColor=white" /></a>
-<a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/dm/embed-rerank?logo=pypi&logoColor=---
+<p align="center">
+  <a href="https://pypi.org/project/embed-rerank/">
+    <img src="https://img.shields.io/pypi/v/embed-rerank?logo=pypi&logoColor=white" alt="PyPI Version" />
+  </a>
+  <a href="https://github.com/joonsoo-me/embed-rerank/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joonsoo-me/embed-rerank?logo=opensource&logoColor=white" /></a>
+<a href="https://developer.apple.com/silicon/"><img src="https://img.shields.io/badge/Apple_Silicon-Ready-blue?logo=apple&logoColor=white" /></a>
+<a href="https://ml-explore.github.io/mlx/"><img src="https://img.shields.io/badge/MLX-Optimized-green?logo=apple&logoColor=white" /></a>
+<a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" /></a>
+</p>
+
+Lightning-fast local embeddings & reranking for Apple Silicon (MLX-first). OpenAI, TEI, and Cohere compatible.
 
 ## 🔧 Troubleshooting
 
@@ -62,15 +68,7 @@ Notes:
 
 ---
 
-## 📄 License
 
-MIT License - build amazing things with this code!" /></a>
-<a href="https://pypi.org/project/embed-rerank/"><img src="https://img.shields.io/pypi/pyversions/embed-rerank?logo=python&logoColor=white" /></a>
-<a href="https://github.com/joonsoo-me/embed-rerank/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joonsoo-me/embed-rerank?logo=opensource&logoColor=white" /></a>
-<a href="https://developer.apple.com/silicon/"><img src="https://img.shields.io/badge/Apple_Silicon-Ready-blue?logo=apple&logoColor=white" /></a>
-<a href="https://ml-explore.github.io/mlx/"><img src="https://img.shields.io/badge/MLX-Optimized-green?logo=apple&logoColor=white" /></a>
-<a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" /></a>
-</div>
 
 ---
 
@@ -275,13 +273,11 @@ response = client.embeddings.create(
 )
 # 🚀 10x faster than OpenAI, same code!
 
-"""
-Base64 encoding support
------------------------
+```
 
-For OpenAI-compatible calls, you can request base64-encoded embeddings by setting `encoding_format` to `"base64"`. This is useful when transporting vectors through systems that expect strings only.
+#### Base64 encoding (OpenAI-compatible)
 
-Example (Python OpenAI SDK):
+You can request base64-encoded embeddings by setting `encoding_format="base64"`. This is useful when transporting vectors through systems that expect strings only.
 
 ```python
 response = client.embeddings.create(
@@ -298,8 +294,6 @@ arr = np.frombuffer(base64.b64decode(response.data[0].embedding), dtype=np.float
 Notes:
 - `encoding_format` defaults to `"float"` (list[float]).
 - `dimensions` is accepted and will truncate/pad to the requested size when supported.
-"""
-```
 
 ### TEI Compatible
 
@@ -422,9 +416,6 @@ embed-rerank --test full --test-url http://localhost:9000
 
 ### 🔧 Advanced Testing (Source Code)
 
-```bash
-### 🔧 Advanced Testing (Source Code)
-
 For development and comprehensive testing with the source code:
 
 ```bash
@@ -483,7 +474,6 @@ embed-rerank --port 9000 &
 ```
 
 > **Windows Support**: Coming soon! Currently optimized for macOS/Linux.
-```
 
 ---
 
@@ -520,7 +510,7 @@ embed-rerank --port 9000 &
 
 ---
 
-## � Quick Reference
+## 📝 Quick Reference
 
 ### Installation & Startup
 ```bash
@@ -564,6 +554,6 @@ flake8 app/ tests/ --max-line-length=120 --extend-ignore=E203,W503  # Linting
 
 ---
 
-## �📄 License
+## 📄 License
 
 MIT License - build amazing things with this code!
