@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env zsh
 
 # 🍎 Apple MLX Embed-Rerank macOS Service Setup
-# Automatically creates LaunchAgent from .env.example configuration
+# Automatically creates LaunchAgent from .env configuration
 
 set -euo pipefail
 
@@ -19,7 +19,7 @@ warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 error() { echo -e "${RED}❌ $1${NC}"; exit 1; }
 
 # Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${(%):-%N}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SERVICE_NAME="com.embed-rerank.server"
 LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
@@ -37,31 +37,48 @@ if [[ ! -d "$PROJECT_DIR" ]]; then
     error "Project directory not found: $PROJECT_DIR"
 fi
 
-# Check if .env.example exists
-ENV_EXAMPLE="$PROJECT_DIR/.env.example"
-if [[ ! -f "$ENV_EXAMPLE" ]]; then
-    error ".env.example not found: $ENV_EXAMPLE"
+# Check if .env exists, fallback to .env.example
+ENV_FILE="$PROJECT_DIR/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    ENV_FILE="$PROJECT_DIR/.env.example"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        error "Neither .env nor .env.example found"
+    fi
+    warning "Using .env.example as .env not found"
 fi
 
 info "📁 Project directory: $PROJECT_DIR"
-info "📋 Using configuration from: $ENV_EXAMPLE"
+info "📋 Using configuration from: $ENV_FILE"
 
-# Parse .env.example for configuration
-declare -A CONFIG
-while IFS='=' read -r key value; do
+# Parse .env or .env.example for configuration
+typeset -A CONFIG
+while IFS= read -r line; do
     # Skip comments and empty lines
-    if [[ $key =~ ^[[:space:]]*# ]] || [[ -z "$key" ]]; then
-        continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$line" ]] && continue
+    
+    # Extract key=value
+    if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+        key="${match[1]}"
+        value="${match[2]}"
+        
+        # Trim whitespace
+        key="${key## }"
+        key="${key%% }"
+        value="${value## }"
+        value="${value%% }"
+        
+        # Remove quotes
+        value="${value#\"}"
+        value="${value%\"}"
+        value="${value#\'}"
+        value="${value%\'}"
+        
+        [[ -n "$key" ]] && CONFIG[$key]="$value"
     fi
-    # Remove leading/trailing whitespace and quotes
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs | sed 's/^["'"'"']//;s/["'"'"']$//')
-    if [[ -n "$key" && -n "$value" ]]; then
-        CONFIG["$key"]="$value"
-    fi
-done < "$ENV_EXAMPLE"
+done < "$ENV_FILE"
 
-# Set default values from .env.example or fallbacks
+# Set default values from .env or fallbacks
 HOST="${CONFIG[HOST]:-0.0.0.0}"
 PORT="${CONFIG[PORT]:-9000}"
 BACKEND="${CONFIG[BACKEND]:-auto}"
@@ -94,8 +111,8 @@ info "   Truncation Strategy: $DEFAULT_TRUNCATION_STRATEGY"
 # Check if service is already running
 if launchctl list | grep -q "$SERVICE_NAME"; then
     warning "Service $SERVICE_NAME is already loaded"
-    read -p "Do you want to restart it? (y/N): " -n 1 -r
-    echo
+    echo -n "Do you want to restart it? (y/N): "
+    read REPLY
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         info "🔄 Stopping existing service..."
         launchctl unload "$PLIST_FILE" 2>/dev/null || true
