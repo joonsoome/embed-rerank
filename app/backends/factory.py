@@ -9,6 +9,10 @@ from app.backends.base import BaseBackend
 from app.backends.mlx_backend import MLX_AVAILABLE, MLXBackend
 from app.backends.torch_backend import TorchBackend
 from app.backends.torch_reranker_backend import TorchCrossEncoderBackend
+try:
+    from app.backends.mlx_reranker_backend import MLXCrossEncoderBackend, MLX_AVAILABLE as MLX_RERANK_AVAILABLE
+except Exception:
+    MLX_RERANK_AVAILABLE = False
 from app.config import settings
 from app.utils.device import detect_optimal_device
 from app.utils.logger import setup_logging
@@ -159,15 +163,8 @@ class BackendFactory:
 
         # Auto-detect backend
         if backend_type == "auto":
-            # If model name suggests MLX but MLX reranker is not yet implemented, fall back to torch
-            name_lower = (model_name or "").lower()
-            if ("mlx" in name_lower or "-mlx" in name_lower) and MLX_AVAILABLE and platform.system() == "Darwin" and platform.machine() == "arm64":
-                # TODO: Implement MLX Cross-Encoder backend; for now, prefer torch due to model head requirements
-                logger.warning(
-                    "MLX-native reranker model detected but MLX cross-encoder backend not implemented yet; using Torch CrossEncoder as fallback",
-                    model_name=model_name,
-                )
-            # Default to Torch CrossEncoder
+            # Conservative: default to Torch CrossEncoder for broad compatibility
+            # Users can opt-in to MLX reranker via RERANKER_BACKEND=mlx
             backend_type = "torch"
 
         if backend_type == "torch":
@@ -176,12 +173,20 @@ class BackendFactory:
             return TorchCrossEncoderBackend(model_name, device=device, batch_size=kwargs.get("batch_size"))
 
         if backend_type == "mlx":
-            # Placeholder until MLX cross-encoder backend is implemented
-            logger.warning(
-                "MLX cross-encoder backend requested but not implemented yet; using Torch CrossEncoder instead",
-                model_name=model_name,
+            if not MLX_RERANK_AVAILABLE or platform.system() != "Darwin" or platform.machine() != "arm64":
+                logger.warning(
+                    "MLX cross-encoder requested but MLX not available or platform unsupported; using Torch CrossEncoder instead",
+                    model_name=model_name,
+                )
+                return TorchCrossEncoderBackend(model_name, device=kwargs.get("device"), batch_size=kwargs.get("batch_size"))
+            # Create MLX Cross-Encoder reranker
+            logger.info("Creating MLX CrossEncoder backend", model_name=model_name)
+            return MLXCrossEncoderBackend(
+                model_name,
+                device="mlx",
+                batch_size=kwargs.get("batch_size", 16),
+                max_length=kwargs.get("max_length", settings.rerank_max_seq_len or 512),
             )
-            return TorchCrossEncoderBackend(model_name, device=kwargs.get("device"), batch_size=kwargs.get("batch_size"))
 
         raise ValueError(f"Unknown reranker backend type: {backend_type}")
 
