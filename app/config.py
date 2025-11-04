@@ -6,7 +6,7 @@ import platform
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import AliasChoices, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,12 +20,37 @@ class Settings(BaseSettings):
 
     # Backend Selection
     backend: Literal["auto", "mlx", "torch"] = Field(default="auto", description="Backend to use for embeddings")
+    reranker_backend: Literal["auto", "mlx", "torch"] = Field(
+        default="auto", description="Backend to use for reranker (cross-encoder)",
+        validation_alias=AliasChoices("RERANKER_BACKEND", "reranker_backend"),
+    )
 
     # Model Configuration
     model_name: str = Field(default="Qwen/Qwen3-Embedding-4B", description="HuggingFace model identifier")
     model_path: Optional[Path] = Field(default=None, description="Path to MLX converted model (optional)")
-    cross_encoder_model: Optional[str] = Field(default=None, description="Cross-encoder model for reranking")
+    cross_encoder_model: Optional[str] = Field(
+        default=None,
+        description="Cross-encoder model for reranking",
+        validation_alias=AliasChoices(
+            "RERANKER_MODEL_ID",
+            "CROSS_ENCODER_MODEL",
+            "RERANKER_MODEL_NAME",  # accept legacy/env convenience name
+            "cross_encoder_model",
+        ),
+    )
     max_sequence_length: int = Field(default=512, description="Maximum input sequence length")
+
+    # Reranker-specific optional settings
+    rerank_max_seq_len: Optional[int] = Field(
+        default=None,
+        description="Optional override for reranker max sequence length (pair)",
+        validation_alias=AliasChoices("RERANK_MAX_SEQ_LEN", "rerank_max_seq_len"),
+    )
+    rerank_batch_size: Optional[int] = Field(
+        default=None,
+        description="Optional override for reranker batch size",
+        validation_alias=AliasChoices("RERANK_BATCH_SIZE", "rerank_batch_size"),
+    )
 
     # Performance Settings
     batch_size: int = Field(default=32, description="Default batch size")

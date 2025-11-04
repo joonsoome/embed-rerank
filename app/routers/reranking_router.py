@@ -44,12 +44,19 @@ router = APIRouter(
 
 # This will be set by the main app
 _backend_manager: BackendManager = None
+_reranker_backend_manager: BackendManager = None
 
 
 def set_backend_manager(manager: BackendManager):
     """Set the backend manager instance."""
     global _backend_manager
     _backend_manager = manager
+
+
+def set_reranker_backend_manager(manager: BackendManager):
+    """Set a dedicated reranker backend manager (cross-encoder)."""
+    global _reranker_backend_manager
+    _reranker_backend_manager = manager
 
 
 async def get_backend_manager() -> BackendManager:
@@ -61,6 +68,10 @@ async def get_backend_manager() -> BackendManager:
 
 async def get_reranking_service(manager: BackendManager = Depends(get_backend_manager)) -> RerankingService:
     """Dependency to get the reranking service."""
+    # Prefer dedicated reranker backend if configured and ready
+    if _reranker_backend_manager is not None and _reranker_backend_manager.is_ready():
+        return RerankingService(_reranker_backend_manager)
+    # Fallback to embedding backend
     if not manager.is_ready():
         raise HTTPException(status_code=503, detail="Backend not ready. Please wait for model initialization.")
     return RerankingService(manager)

@@ -1,4 +1,4 @@
-# 🔥 Single Model Embedding & Reranking API
+# 🔥 Single Server: Embeddings + Cross‑Encoder Reranking (MLX‑first)
 
 <p align="center">
   <a href="https://pypi.org/project/embed-rerank/">
@@ -10,7 +10,7 @@
 <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" /></a>
 </p>
 
-Lightning-fast local embeddings & reranking for Apple Silicon (MLX-first). OpenAI, TEI, and Cohere compatible.
+Lightning-fast local embeddings & true cross‑encoder reranking on Apple Silicon (MLX‑first). OpenAI, TEI, and Cohere compatible.
 
 ## 🔧 Troubleshooting
 ### Common Issues
@@ -67,37 +67,45 @@ Transform your text processing with **10x faster** embeddings and reranking on A
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (2 Modes)
 
-### Option 1: Install from PyPI (Recommended)
+### Option 1: Embeddings‑only (MODEL_NAME만 설정)
 
 ```bash
-# Install the package
 pip install embed-rerank
 
-# Start the server (default port 9000)
-embed-rerank
+# .env (필수 키만)
+cat > .env <<'ENV'
+BACKEND=auto
+MODEL_NAME=mlx-community/Qwen3-Embedding-4B-4bit-DWQ
+PORT=9000
+HOST=0.0.0.0
+ENV
 
-# Or with custom port and options
-embed-rerank --port 8080 --host 127.0.0.1
-
-# See all options
-embed-rerank --help
+embed-rerank  # http://localhost:9000
 ```
 
-### Option 2: From Source (Development)
+### Option 2: Embeddings + Cross‑Encoder Reranking (한 서버, 두 모델)
 
 ```bash
-# 1. Clone and setup
-git clone https://github.com/joonsoo-me/embed-rerank.git
-cd embed-rerank
+git clone https://github.com/joonsoo-me/embed-rerank.git && cd embed-rerank
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Start server (macOS/Linux)
-./tools/server-run.sh
+# .env (리랭커 모델만 추가하면 cross‑encoder 경로가 활성화됩니다)
+cat > .env <<'ENV'
+BACKEND=auto
+MODEL_NAME=mlx-community/Qwen3-Embedding-4B-4bit-DWQ
 
-# 3. Test it works
+# Cross‑encoder reranker (MLX native, 현재는 Torch로 자동 폴백)
+RERANKER_MODEL_ID="vserifsaglam/Qwen3-Reranker-4B-4bit-MLX"
+RERANKER_BACKEND=auto
+
+PORT=9000
+HOST=0.0.0.0
+ENV
+
+./tools/server-run.sh
 curl http://localhost:9000/health/
 ```
 
@@ -126,7 +134,7 @@ curl http://localhost:9000/health/
 
 ---
 
-## ⚙️ CLI Configuration
+## ⚙️ Configuration: One Server, Two Models
 
 ### PyPI Package CLI Options
 
@@ -161,7 +169,7 @@ embed-rerank
 
 ### Source Code Configuration
 
-Create `.env` file for development:
+Create `.env` file for development (필수 키 최소화):
 
 ```env
 # Server
@@ -177,11 +185,17 @@ MODEL_PATH=                               # Custom model directory
 TRANSFORMERS_CACHE=                           # HF cache override
 # Default: ~/.cache/huggingface/hub/
 
-# Performance & Auto-Configuration
-BATCH_SIZE=32
-MAX_TEXTS_PER_REQUEST=100
-# Note: Token limits and dimensions are automatically extracted from model metadata
-# The service dynamically configures itself based on the loaded model's capabilities
+### Enable Cross‑Encoder Reranker (선택)
+RERANKER_MODEL_ID="vserifsaglam/Qwen3-Reranker-4B-4bit-MLX"
+RERANKER_BACKEND=auto     # auto | mlx | torch (MLX 구현 준비 중, 현재 torch로 폴백)
+## Optional
+# RERANK_BATCH_SIZE=16
+# RERANK_MAX_SEQ_LEN=1024
+
+장점:
+- 동일 서버 프로세스에서 임베딩과 리랭킹을 동시에 제공 (운영 간소화)
+- 환경변수로 손쉽게 on/off 전환 (임베딩만 ↔ 임베딩+리랭킹)
+- Apple MLX 최적화(임베딩) + 교차 인코더의 품질 (리랭킹)
 ```
 
 ### 🧠 Smart Text Processing Features
@@ -220,7 +234,7 @@ DIMENSION_STRATEGY=pad   # or trim
 - OpenAI-compatible `dimensions` request field is supported and maps to trim behavior when no global override is set.
 - For cosine similarity, zero-padding + re-normalization is safe; for other metrics, prefer retraining/reindexing.
 
-### 📂 Model Cache Management
+### 📂 Model Cache Management (요약)
 
 The service automatically manages model downloads and caching:
 
@@ -248,7 +262,7 @@ ls ~/.cache/huggingface/hub | grep -i qwen3 || echo "No Qwen3 models found in ca
 
 ---
 
-## 🌐 Four APIs, One Service
+## 🌐 Four APIs, One Service (요약)
 
 | API | Endpoint | Use Case |
 |-----|----------|----------|
@@ -350,7 +364,7 @@ curl -X POST "http://localhost:9000/api/v1/rerank/" \
 
 ---
 
-## 🧪 Performance Testing & Validation
+## 🧪 Testing (요약)
 
 ### 🚀 Built-in CLI Testing (PyPI Package)
 
@@ -424,7 +438,7 @@ pytest tests/ -v
 
 ---
 
-## 🛠 Development & Deployment
+## 🛠 Development & Deployment (요약)
 
 ### Local Development (Source Code)
 

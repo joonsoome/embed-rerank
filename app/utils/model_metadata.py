@@ -67,6 +67,11 @@ class ModelMetadataExtractor:
             "model_type": "unknown",
             "hidden_size": 4096,  # 기본값
             "source": "default",
+            # Reranker-specific defaults (will be used when task == 'rerank')
+            "task": "embed",  # embed | rerank
+            "max_seq_len_pair": 1024,
+            "truncation": {"strategy": "pairwise_head+tail", "query_priority": True},
+            "score_range": "raw",  # raw | sigmoid | softmax_pair
         }
 
         try:
@@ -98,6 +103,18 @@ class ModelMetadataExtractor:
                         "source": "config.json",
                     }
                 )
+
+                # Detect reranker models heuristically by name/type
+                name_l = str(model_path_or_name).lower()
+                is_reranker = (
+                    "rerank" in name_l
+                    or "cross-encoder" in name_l
+                    or config.get("architectures", ["unknown"])[0].lower().find("cross") >= 0
+                )
+                if is_reranker:
+                    metadata["task"] = "rerank"
+                    # Pair length defaults; prefer tokenizer_config override below
+                    metadata["max_seq_len_pair"] = min(int(metadata.get("max_position_embeddings", 2048)), 4096)
 
                 # 임베딩 차원 결정 (우선순위: hidden_size > d_model > embedding_size > model_dim > dim)
                 candidate_keys = [
@@ -150,6 +167,10 @@ class ModelMetadataExtractor:
                         if model_max_length < metadata["max_position_embeddings"]:
                             metadata["max_position_embeddings"] = model_max_length
                             logger.info(f"📏 Updated max tokens from tokenizer: {model_max_length}")
+
+                        # If reranker, set pair length accordingly
+                        if metadata.get("task") == "rerank":
+                            metadata["max_seq_len_pair"] = min(model_max_length, 4096)
 
         except Exception as e:
             logger.warning(f"⚠️ Failed to extract metadata, using defaults: {e}")

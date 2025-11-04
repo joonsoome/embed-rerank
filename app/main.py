@@ -41,6 +41,7 @@ logger = setup_logging(settings.log_level, settings.log_format)
 
 # 🌟 Global state management - keeping our Apple MLX backend ready for action
 backend_manager: BackendManager = None
+reranker_backend_manager: BackendManager = None
 startup_time = None
 
 
@@ -56,7 +57,7 @@ async def lifespan(app: FastAPI):
     The lifespan pattern ensures our MLX model is ready before any requests
     arrive, delivering that instant-on experience Apple Silicon deserves.
     """
-    global backend_manager, startup_time
+    global backend_manager, reranker_backend_manager, startup_time
 
     startup_time = time.time()
     logger.info("🚀 Starting Apple MLX-powered application initialization")
@@ -89,6 +90,29 @@ async def lifespan(app: FastAPI):
         # 🔗 Set embedding service for OpenAI and TEI routers
         openai_router.set_embedding_service(embedding_service)
         tei_router.set_embedding_service(embedding_service)
+
+        # 🚦 Optionally initialize dedicated reranker backend if configured
+        if settings.cross_encoder_model:
+            try:
+                rerank_backend = BackendFactory.create_reranker_backend(
+                    backend_type=settings.reranker_backend,
+                    model_name=settings.cross_encoder_model,
+                    batch_size=settings.rerank_batch_size or 16,
+                )
+                reranker_backend_manager = BackendManager(rerank_backend)
+                logger.info("🧠 Initializing Cross-Encoder Reranker backend")
+                await reranker_backend_manager.initialize()
+                reranking_router.set_reranker_backend_manager(reranker_backend_manager)
+                logger.info(
+                    "✅ Reranker backend ready",
+                    backend=rerank_backend.__class__.__name__,
+                    model_name=settings.cross_encoder_model,
+                )
+            except Exception as e:
+                logger.warning(
+                    "⚠️ Failed to initialize dedicated reranker backend; falling back to embedding-based rerank",
+                    error=str(e),
+                )
 
         # ⏱️ Track our lightning-fast startup time
         health_router.startup_time = startup_time
