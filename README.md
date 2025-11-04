@@ -13,9 +13,7 @@
 Lightning-fast local embeddings & reranking for Apple Silicon (MLX-first). OpenAI, TEI, and Cohere compatible.
 
 ## 🔧 Troubleshooting
-
 ### Common Issues
-
 **"Embedding service not initialized" Error**: Fixed in v1.2.0. If you encounter this error:
 1. Update to the latest version: `pip install --upgrade embed-rerank`
 2. For source installations, ensure proper service initialization in `main.py`
@@ -40,35 +38,15 @@ For comprehensive troubleshooting, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHO
 
 Recent MLX versions removed `mx.array` in favor of `mx.asarray` (and `mx.numpy.array`). This repository includes a compatibility helper that automatically forwards to the appropriate API, so Apple Silicon embeddings continue to work across MLX versions.
 
-What changed:
+**What changed:**
 - Internal `mx.array(...)` calls now use a helper that tries, in order: `mx.array` → `mx.asarray` → `mx.numpy.array`.
-- Placeholder embedding fallback now respects the model configuration using `config['hidden_size']` (previously some error paths defaulted to 4096).
+- Placeholder embedding fallback now respects the model configuration using multiple dimension keys.
 
-Why this matters:
+**Why this matters:**
 - Prevents runtime error: `module 'mlx.core' has no attribute 'array'` on newer MLX.
-- Ensures embedding dimension matches the loaded model, avoiding vector size mismatches (e.g., when updating existing ChromaDB collections).
+- Ensures embedding dimension matches the loaded model, avoiding vector size mismatches.
 
-Quick validation (Apple Silicon + MLX installed):
-```python
-import asyncio
-from app.backends.factory import BackendFactory
-
-async def main():
-    backend = BackendFactory.create_backend("mlx", "mlx-community/Qwen3-Embedding-4B-4bit-DWQ")
-    await backend.load_model()
-    res = await backend.embed_texts(["hello", "world"])
-    print("shape:", res.vectors.shape)  # (2, <model_hidden_size>)
-
-asyncio.run(main())
-```
-
-Notes:
-- Optional dependency for MLX (macOS only): `pip install "embed-rerank[mlx]"` or see `pyproject.toml` (`mlx>=0.4.0`, `mlx-lm>=0.2.0`).
-- If you maintain an existing ChromaDB collection, verify that new embeddings match the existing dimension before upsert.
-
----
-
-
+**Optional dependency for MLX (macOS only):** `pip install "embed-rerank[mlx]"` or see `pyproject.toml` (`mlx>=0.4.0`, `mlx-lm>=0.2.0`).
 
 ---
 
@@ -213,12 +191,34 @@ The service automatically handles long texts with intelligent processing:
 - **Auto-Truncation**: Texts exceeding token limits are automatically reduced by ~75%
 - **Smart Summarization**: Key sentences are preserved while removing redundancy
 - **Dynamic Token Limits**: Automatically detected from model metadata (e.g., 512 tokens for Qwen3)
-- **Dimension Detection**: Vector dimensions auto-configured from model (e.g., 1024D for Qwen3)
+- **Dynamic Dimension Detection**: Vector dimensions auto-configured from model metadata
 - **Processing Transparency**: Optional processing info in API responses
 
 **Example: 8000+ character text → 2037 tokens automatically**
 
 ---
+
+### 📏 Dynamic Embedding Dimensions
+
+- The service derives embedding dimension directly from the loaded model’s config.
+- Supported config keys (priority): `hidden_size` → `d_model` → `embedding_size` → `model_dim` → `dim`.
+- Backend and health endpoints report the actual vector size; clients should not assume a fixed dimension.
+- Tip for vector DBs (e.g., Qdrant): create the collection with the reported dimension.
+
+#### Optional: Fixed Output Dimension (Compatibility)
+
+If you already have an index built at a specific dimension (e.g., 4096), you can ask the service to pad/trim output vectors to that size:
+
+```env
+# Optional – force output vectors to a fixed size
+OUTPUT_EMBEDDING_DIMENSION=4096
+# Strategy: pad with zeros or trim leading dimensions (then re-normalize)
+DIMENSION_STRATEGY=pad   # or trim
+```
+
+- Service-level setting takes precedence over per-request settings.
+- OpenAI-compatible `dimensions` request field is supported and maps to trim behavior when no global override is set.
+- For cosine similarity, zero-padding + re-normalization is safe; for other metrics, prefer retraining/reindexing.
 
 ### 📂 Model Cache Management
 
@@ -272,11 +272,7 @@ response = client.embeddings.create(
     model="text-embedding-ada-002"
 )
 # 🚀 10x faster than OpenAI, same code!
-
 ```
-
-#### Base64 encoding (OpenAI-compatible)
-
 You can request base64-encoded embeddings by setting `encoding_format="base64"`. This is useful when transporting vectors through systems that expect strings only.
 
 ```python
@@ -329,25 +325,6 @@ response = requests.post("http://localhost:9000/v1/rerank", json={
     "top_n": 2
 })
 ```
-
----
-
-## 🧩 LightRAG Integration
-
-We validated an end-to-end workflow using LightRAG with this service:
-- Embeddings via the OpenAI-compatible endpoint (`/v1/embeddings`)
-- Reranking via the Cohere-compatible endpoint (`/v1/rerank` or `/v2/rerank`)
-
-Results: the integration tests succeeded using OpenAI embeddings and Cohere reranking.
-
-Qwen Embedding similarity scaling note: when using the Qwen Embedding model, we observed cosine similarity values that appear very small (e.g., `0.02`, `0.03`). This is expected due to vector scaling differences and does not indicate poor retrieval by itself. As a starting point, we recommend disabling the retrieval threshold in LightRAG to avoid filtering out good matches prematurely:
-
-```
-# === Retrieval threshold ===
-COSINE_THRESHOLD=0.0
-```
-
-Adjust upward later based on your dataset and evaluation results.
 
 ### Native API
 
@@ -416,6 +393,9 @@ embed-rerank --test full --test-url http://localhost:9000
 
 ### 🔧 Advanced Testing (Source Code)
 
+```bash
+### 🔧 Advanced Testing (Source Code)
+
 For development and comprehensive testing with the source code:
 
 ```bash
@@ -474,6 +454,7 @@ embed-rerank --port 9000 &
 ```
 
 > **Windows Support**: Coming soon! Currently optimized for macOS/Linux.
+```
 
 ---
 
@@ -510,7 +491,7 @@ embed-rerank --port 9000 &
 
 ---
 
-## 📝 Quick Reference
+## Quick Reference
 
 ### Installation & Startup
 ```bash
@@ -551,6 +532,25 @@ black --line-length 120 app/ tests/    # Consistent formatting
 isort --profile black app/ tests/      # Import organization  
 flake8 app/ tests/ --max-line-length=120 --extend-ignore=E203,W503  # Linting
 ```
+
+---
+
+## 🧩 LightRAG Integration
+
+We validated an end-to-end workflow using LightRAG with this service:
+- Embeddings via the OpenAI-compatible endpoint (`/v1/embeddings`)
+- Reranking via the Cohere-compatible endpoint (`/v1/rerank` or `/v2/rerank`)
+
+Results: the integration tests succeeded using OpenAI embeddings and Cohere reranking.
+
+Qwen Embedding similarity scaling note: when using the Qwen Embedding model, we observed cosine similarity values that appear very small (e.g., `0.02`, `0.03`). This is expected due to vector scaling differences and does not indicate poor retrieval by itself. As a starting point, we recommend disabling the retrieval threshold in LightRAG to avoid filtering out good matches prematurely:
+
+```
+# === Retrieval threshold ===
+COSINE_THRESHOLD=0.0
+```
+
+Adjust upward later based on your dataset and evaluation results.
 
 ---
 

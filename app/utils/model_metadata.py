@@ -99,8 +99,18 @@ class ModelMetadataExtractor:
                     }
                 )
 
-                # 임베딩 차원 결정 (보통 hidden_size와 동일)
-                metadata["embedding_dimension"] = metadata["hidden_size"]
+                # 임베딩 차원 결정 (우선순위: hidden_size > d_model > embedding_size > model_dim > dim)
+                candidate_keys = [
+                    "hidden_size",
+                    "d_model",
+                    "embedding_size",
+                    "model_dim",
+                    "dim",
+                ]
+                for k in candidate_keys:
+                    if k in config and isinstance(config[k], int):
+                        metadata["embedding_dimension"] = int(config[k])
+                        break
 
                 # 권장 최대 토큰 계산 (성능 최적화)
                 max_pos = metadata["max_position_embeddings"]
@@ -180,11 +190,11 @@ class ModelMetadataExtractor:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
 
-                # 임베딩 차원 추출
-                if "hidden_size" in config:
-                    metadata["embedding_dimension"] = config["hidden_size"]
-                elif "d_model" in config:
-                    metadata["embedding_dimension"] = config["d_model"]
+                # 임베딩 차원 추출 (여러 키 지원)
+                for k in ["hidden_size", "d_model", "embedding_size", "model_dim", "dim"]:
+                    if k in config and isinstance(config[k], int):
+                        metadata["embedding_dimension"] = int(config[k])
+                        break
 
                 # 최대 포지션 임베딩 추출
                 if "max_position_embeddings" in config:

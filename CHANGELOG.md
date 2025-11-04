@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - These updates maintain full compatibility with existing OpenAI SDK usage; default remains `encoding_format="float"`.
 
 
+## [1.3.0] - 2025-11-04
+
+### Added
+- 📏 Dynamic embedding dimension documentation in README, including supported config keys and best practices for vector DBs
+- 🧩 Optional fixed output-dimension controls (disabled by default)
+  - Env: `OUTPUT_EMBEDDING_DIMENSION`, `DIMENSION_STRATEGY` (pad|trim)
+  - OpenAI-compatible `dimensions` request field mapped to per-request trim when no global override is set
+
+### Fixed
+- 🛠 MLX backend embedding dimension alignment
+  - Properly reads model config dimension using multiple keys (`hidden_size`, `d_model`, `embedding_size`, `model_dim`, `dim`)
+  - Placeholder/fallback path now respects config dict values (no unintended 4096 defaulting)
+
+### Changed
+- 🧹 Removed hardcoded dimension assumptions from docs; router docstrings updated to reflect dynamic dimensions
+- 📚 README updated with “Dynamic Embedding Dimensions” section and optional compatibility knobs
+
 ### Added
 - 🆕 **Cohere API v1/v2 Compatibility**: Full support for Cohere reranking API
   - `/v1/rerank` endpoint (legacy format support)

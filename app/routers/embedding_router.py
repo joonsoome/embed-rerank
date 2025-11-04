@@ -7,7 +7,7 @@ when cutting-edge AI meets Apple's unified memory architecture.
 
 ⚡ Performance Highlights:
 - Sub-millisecond text embedding generation
-- 320-dimensional vectors optimized for semantic search
+- Dynamic vector dimension (auto-detected from model)
 - Batch processing with MLX acceleration
 - Zero-copy operations on Apple Silicon
 
@@ -89,7 +89,7 @@ async def generate_embeddings(request: EmbedRequest, service: EmbeddingService =
     ✨ What happens here:
     - Text tokenization optimized for Apple Silicon
     - MLX-accelerated model inference through unified memory
-    - 320-dimensional vector generation in <1ms
+    - Dynamic vector dimension auto-detected from model
     - Automatic normalization for cosine similarity
 
     🎯 Perfect for:

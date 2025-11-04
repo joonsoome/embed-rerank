@@ -264,6 +264,16 @@ class MLXBackend(BaseBackend):
                 logger.info("config.json missing - using default config for Qwen3 model")
                 config = {"hidden_size": 4096, "max_position_embeddings": 32768}
 
+            # Normalize config keys: some models (e.g., Qwen3) use 'd_model'
+            # Ensure 'hidden_size' is present for downstream logic
+            if isinstance(config, dict):
+                if 'hidden_size' not in config and 'd_model' in config:
+                    try:
+                        config['hidden_size'] = int(config['d_model'])
+                    except Exception:
+                        # Fallback silently if casting fails
+                        config['hidden_size'] = config['d_model']
+
             # Attempt to locate and load MLX weights
             weights_path = self._find_weights_file(model_dir)
             if weights_path:
@@ -279,7 +289,8 @@ class MLXBackend(BaseBackend):
                 logger.info("No MLX weights found - creating compatible embedding model")
 
             # Create a compatible MLX embedding model
-            hidden_size = config.get('hidden_size', 4096)
+            # Prefer explicit hidden_size, fall back to d_model
+            hidden_size = config.get('hidden_size') or config.get('d_model', 4096)
             model = self._create_placeholder_model(hidden_size)
             config['hidden_size'] = hidden_size
             logger.info("🧪 Created MLX-compatible embedding model", hidden_size=hidden_size)
@@ -393,7 +404,8 @@ class MLXBackend(BaseBackend):
                 def __init__(self, config, weights):
                     self.config = config
                     self.weights = weights
-                    self.hidden_size = config.get('hidden_size', 4096)
+                    # Some configs expose 'd_model' rather than 'hidden_size'
+                    self.hidden_size = config.get('hidden_size') or config.get('d_model', 4096)
                     self.max_position_embeddings = config.get('max_position_embeddings', 32768)
 
                 def embed(self, input_ids):
@@ -524,8 +536,11 @@ class MLXBackend(BaseBackend):
 
     def _generate_placeholder_embeddings(self, texts: List[str]) -> np.ndarray:
         """Generate placeholder embeddings for fallback."""
-        # self.config is a dict; use dict.get to reflect actual model settings
-        embedding_dim = self.config.get('hidden_size', 4096) if self.config else 4096
+        # self.config is a dict; prefer hidden_size then d_model for dynamic dimension support
+        if isinstance(self.config, dict):
+            embedding_dim = self.config.get('hidden_size') or self.config.get('d_model') or 4096
+        else:
+            embedding_dim = 4096
 
         # Use text hash for deterministic embeddings
         embeddings = []
