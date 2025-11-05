@@ -97,7 +97,9 @@ cat > .env <<'ENV'
 BACKEND=auto
 MODEL_NAME=mlx-community/Qwen3-Embedding-4B-4bit-DWQ
 
-# Cross‑encoder reranker (MLX native, 현재는 Torch로 자동 폴백)
+# Cross‑encoder reranker
+# - MLX experimental v1 available (pooled embeddings + linear head)
+# - Auto defaults to Torch for stability; set RERANKER_BACKEND=mlx to opt-in
 RERANKER_MODEL_ID="vserifsaglam/Qwen3-Reranker-4B-4bit-MLX"
 RERANKER_BACKEND=auto
 
@@ -187,7 +189,7 @@ TRANSFORMERS_CACHE=                           # HF cache override
 
 ### Enable Cross‑Encoder Reranker (선택)
 RERANKER_MODEL_ID="vserifsaglam/Qwen3-Reranker-4B-4bit-MLX"
-RERANKER_BACKEND=auto     # auto | mlx | torch (MLX 구현 준비 중, 현재 torch로 폴백)
+RERANKER_BACKEND=auto     # auto | mlx | torch (MLX experimental v1; auto still defaults to torch)
 ## Optional
 # RERANK_BATCH_SIZE=16
 # RERANK_MAX_SEQ_LEN=1024
