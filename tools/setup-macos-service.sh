@@ -85,6 +85,11 @@ BACKEND="${CONFIG[BACKEND]:-auto}"
 MODEL_NAME="${CONFIG[MODEL_NAME]:-mlx-community/Qwen3-Embedding-4B-4bit-DWQ}"
 MODEL_PATH="${CONFIG[MODEL_PATH]:-}"
 CROSS_ENCODER_MODEL="${CONFIG[CROSS_ENCODER_MODEL]:-}"
+RERANKER_BACKEND="${CONFIG[RERANKER_BACKEND]:-auto}"
+RERANKER_MODEL_ID="${CONFIG[RERANKER_MODEL_ID]:-}"
+RERANKER_MODEL_NAME="${CONFIG[RERANKER_MODEL_NAME]:-}"
+RERANK_MAX_SEQ_LEN="${CONFIG[RERANK_MAX_SEQ_LEN]:-}"
+RERANK_BATCH_SIZE="${CONFIG[RERANK_BATCH_SIZE]:-}"
 RELOAD="${CONFIG[RELOAD]:-false}"
 BATCH_SIZE="${CONFIG[BATCH_SIZE]:-32}"
 MAX_BATCH_SIZE="${CONFIG[MAX_BATCH_SIZE]:-128}"
@@ -105,6 +110,11 @@ info "   Host: $HOST"
 info "   Port: $PORT"
 info "   Backend: $BACKEND"
 info "   Model: $MODEL_NAME"
+info "   Reranker Backend: $RERANKER_BACKEND"
+info "   Reranker Model (ID): ${RERANKER_MODEL_ID:-<unset>}"
+info "   Reranker Model (NAME alias): ${RERANKER_MODEL_NAME:-<unset>}"
+info "   Rerank Max Seq Len: ${RERANK_MAX_SEQ_LEN:-<default>}"
+info "   Rerank Batch Size: ${RERANK_BATCH_SIZE:-<default>}"
 info "   Auto Truncate: $DEFAULT_AUTO_TRUNCATE"
 info "   Truncation Strategy: $DEFAULT_TRUNCATION_STRATEGY"
 
@@ -173,6 +183,11 @@ cat > "$PLIST_FILE" << EOF
 		<key>MODEL_NAME</key><string>$MODEL_NAME</string>
 		<key>MODEL_PATH</key><string>$MODEL_PATH</string>
 		<key>CROSS_ENCODER_MODEL</key><string>$CROSS_ENCODER_MODEL</string>
+        <key>RERANKER_BACKEND</key><string>$RERANKER_BACKEND</string>
+        <key>RERANKER_MODEL_ID</key><string>$RERANKER_MODEL_ID</string>
+        <key>RERANKER_MODEL_NAME</key><string>$RERANKER_MODEL_NAME</string>
+        <key>RERANK_MAX_SEQ_LEN</key><string>$RERANK_MAX_SEQ_LEN</string>
+        <key>RERANK_BATCH_SIZE</key><string>$RERANK_BATCH_SIZE</string>
 		<key>RELOAD</key><string>$RELOAD</string>
 		<key>BATCH_SIZE</key><string>$BATCH_SIZE</string>
 		<key>MAX_BATCH_SIZE</key><string>$MAX_BATCH_SIZE</string>
