@@ -18,9 +18,11 @@ import datetime
 import time
 
 import psutil
+from . import openai_router as _openai_router
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..backends.base import BackendManager
+from .. import __version__
 from ..models.responses import ErrorResponse, HealthResponse
 
 router = APIRouter(
@@ -35,6 +37,7 @@ router = APIRouter(
 # This will be set by the main app
 _backend_manager: BackendManager = None
 _embedding_service = None  # 🚀 Dynamic service reference
+_reranker_backend_manager: BackendManager = None
 
 
 def set_backend_manager(manager: BackendManager):
@@ -47,6 +50,12 @@ def set_embedding_service(service):
     """🚀 Set the configured embedding service for metadata access"""
     global _embedding_service
     _embedding_service = service
+
+
+def set_reranker_backend_manager(manager: BackendManager):
+    """Set the dedicated reranker backend manager (if available)."""
+    global _reranker_backend_manager
+    _reranker_backend_manager = manager
 
 
 async def get_backend_manager() -> BackendManager:
@@ -87,7 +96,7 @@ async def health_check(manager: BackendManager = Depends(get_backend_manager)):
             except Exception:
                 pass  # Fallback gracefully
 
-        # Get system resource information
+    # Get system resource information
         memory_info = psutil.virtual_memory()
         cpu_info = psutil.cpu_percent(interval=0.1)
 
@@ -103,7 +112,7 @@ async def health_check(manager: BackendManager = Depends(get_backend_manager)):
         # Top-level service information with MLX branding
         service_info = {
             "name": "embed-rerank",
-            "version": "2.0.0",  # 🚀 Dynamic Config Version!
+            "version": __version__,
             "description": "Apple MLX-powered embedding & reranking service",
             "powered_by": "Apple MLX Framework",
             "optimized_for": "Apple Silicon",
@@ -152,6 +161,34 @@ async def health_check(manager: BackendManager = Depends(get_backend_manager)):
                 "dynamic_config": "enabled" if service_metadata else "disabled",
             },
         }
+
+        # ➕ Include reranker backend info if configured and ready
+        try:
+            # Prefer local reranker manager; fall back to OpenAI router's if available
+            r_manager = _reranker_backend_manager
+            if (r_manager is None or not r_manager.is_ready()) and hasattr(_openai_router, 'reranker_backend_manager'):
+                r_manager = _openai_router.reranker_backend_manager
+
+            if r_manager is not None and r_manager.is_ready():
+                rerank_info = r_manager.get_current_backend_info()
+                # Normalize backend type
+                r_backend = rerank_info.get("backend") or rerank_info.get("name", "unknown")
+                r_type = "mlx" if isinstance(r_backend, str) and "mlx" in r_backend.lower() else (
+                    "torch" if isinstance(r_backend, str) and "torch" in r_backend.lower() else "cpu"
+                )
+                health_data["reranker"] = {
+                    "name": rerank_info.get("name"),
+                    "type": r_type,
+                    "status": rerank_info.get("status"),
+                    "model_name": rerank_info.get("model_name"),
+                    "device": rerank_info.get("device"),
+                    # Surface MLX experimental options when present
+                    "pooling": rerank_info.get("pooling"),
+                    "score_norm": rerank_info.get("score_norm"),
+                    "method": rerank_info.get("rerank_method"),
+                }
+        except Exception:
+            pass
 
         # 🎯 Add detailed model metadata if available
         if service_metadata:

@@ -25,8 +25,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..backends.base import BackendManager
-from ..models.requests import EmbedRequest
+from ..models.requests import EmbedRequest, RerankRequest
 from ..models.responses import EmbedResponse
+from ..services.reranking_service import RerankingService
+from .. import __version__
 
 # 🧠 Neural network logging powered by Apple Silicon
 logger = structlog.get_logger()
@@ -36,6 +38,7 @@ router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
 
 # 🎯 Global backend manager reference
 backend_manager: BackendManager = None
+reranker_backend_manager: BackendManager = None
 
 
 def set_backend_manager(manager: BackendManager):
@@ -50,6 +53,13 @@ def set_backend_manager(manager: BackendManager):
     logger.info("🔗 OpenAI compatibility layer connected to Apple MLX backend")
 
 
+def set_reranker_backend_manager(manager: BackendManager):
+    """Connect dedicated reranker backend for OpenAI-compatible rerank endpoint."""
+    global reranker_backend_manager
+    reranker_backend_manager = manager
+    logger.info("🔗 OpenAI compatibility layer connected to Reranker backend")
+
+
 async def get_backend_manager() -> BackendManager:
     """
     🎯 Dependency Provider: Access to Apple MLX Backend
@@ -60,6 +70,15 @@ async def get_backend_manager() -> BackendManager:
     if backend_manager is None:
         raise HTTPException(status_code=503, detail="Apple MLX backend not ready - please wait for initialization")
     return backend_manager
+
+
+async def get_reranking_service() -> RerankingService:
+    """Provide a RerankingService; prefer dedicated reranker when available."""
+    if reranker_backend_manager is not None and reranker_backend_manager.is_ready():
+        return RerankingService(reranker_backend_manager)
+    if backend_manager is None or not backend_manager.is_ready():
+        raise HTTPException(status_code=503, detail="Backend not ready. Please wait for model initialization.")
+    return RerankingService(backend_manager)
 
 
 # 🔄 OpenAI-Compatible Request/Response Models with Enhanced MLX Arguments
@@ -200,6 +219,45 @@ class OpenAIEmbeddingResponse(BaseModel):
                 "usage": {"prompt_tokens": 5, "total_tokens": 5},
             }
         }
+
+
+# 🔎 OpenAI-like Rerank Models (not official, pragmatic compatibility)
+class OpenAIRerankRequest(BaseModel):
+    query: str = Field(..., description="Query text")
+    documents: Union[List[str], List[Dict[str, Any]]] = Field(
+        ..., description="Documents (strings or objects with 'text')"
+    )
+    top_n: Optional[int] = Field(default=None, description="Top N results to return")
+    return_documents: Optional[bool] = Field(default=False, description="Include document text in response")
+
+    @staticmethod
+    def to_internal(req: "OpenAIRerankRequest") -> RerankRequest:
+        # Normalize documents -> passages (strings)
+        passages: List[str] = []
+        for i, d in enumerate(req.documents):
+            if isinstance(d, str):
+                passages.append(d)
+            elif isinstance(d, dict):
+                text = d.get("text") or d.get("content") or d.get("body") or d.get("value")
+                if text is None:
+                    raise HTTPException(status_code=422, detail=f"Document at index {i} missing 'text'")
+                passages.append(str(text))
+            else:
+                raise HTTPException(status_code=422, detail=f"Invalid document at index {i}")
+        top_k = req.top_n if (req.top_n is not None and req.top_n > 0) else len(passages)
+        return RerankRequest(query=req.query, passages=passages, top_k=top_k, return_documents=req.return_documents)
+
+
+class OpenAIRerankData(BaseModel):
+    index: int
+    score: float
+    document: Optional[str] = None
+
+
+class OpenAIRerankUsage(BaseModel):
+    total_passages: int
+    returned_passages: int
+    total_tokens: Optional[int] = None
 
 
 # 🔄 OpenAI Models List Compatibility
@@ -459,14 +517,28 @@ async def openai_health(manager: BackendManager = Depends(get_backend_manager)) 
     the Apple MLX backend and ready to serve lightning-fast embeddings! ⚡
     """
     try:
-        # 🔍 Check MLX backend status
+        # 🔍 Check backend status and gather richer metadata
         backend_info = manager.get_backend_info()
+        backend_health = await manager.health_check()
         is_ready = manager.is_ready()
 
         status = "healthy" if is_ready else "not_ready"
 
-        health_data = {
+        # 📏 Derive embedding dimension if available
+        embedding_dim = (
+            backend_health.get("embedding_dim")
+            or backend_health.get("embedding_dimension")
+            or backend_info.get("embedding_dim")
+            or None
+        )
+
+        health_data: Dict[str, Any] = {
             "status": status,
+            "service": {
+                "name": "embed-rerank",
+                "version": __version__,
+                "description": "OpenAI-compatible endpoints powered by Apple MLX",
+            },
             "openai_compatible": True,
             "backend": {
                 "name": backend_info.get('name', 'unknown'),
@@ -474,9 +546,12 @@ async def openai_health(manager: BackendManager = Depends(get_backend_manager)) 
                 "model": backend_info.get('model_name', 'unknown'),
                 "ready": is_ready,
             },
+            "embedding": {
+                "dimension": embedding_dim,
+            },
             "compatibility": {
                 "openai_sdk": True,
-                "endpoints": ["/v1/embeddings", "/v1/models"],
+                "endpoints": ["/v1/embeddings", "/v1/models", "/v1/openai/rerank"],
                 "response_format": "openai_standard",
             },
             "performance": {
@@ -486,6 +561,21 @@ async def openai_health(manager: BackendManager = Depends(get_backend_manager)) 
             },
             "timestamp": time.time(),
         }
+
+        # ➕ Include reranker backend info if configured and ready
+        try:
+            if reranker_backend_manager is not None and reranker_backend_manager.is_ready():
+                r_info = reranker_backend_manager.get_current_backend_info()
+                health_data["reranker"] = {
+                    "name": r_info.get("name"),
+                    "model_name": r_info.get("model_name"),
+                    "device": r_info.get("device"),
+                    "pooling": r_info.get("pooling"),
+                    "score_norm": r_info.get("score_norm"),
+                    "method": r_info.get("rerank_method") or r_info.get("method"),
+                }
+        except Exception:
+            pass
 
         logger.info(
             "💚 OpenAI compatibility health check",
@@ -511,3 +601,60 @@ def set_embedding_service(service):
     global _embedding_service
     _embedding_service = service
     logger.info("🔄 OpenAI router updated with dynamic embedding service")
+
+
+@router.post("/openai/rerank")
+@router.post("/rerank_openai")
+async def openai_rerank(request: OpenAIRerankRequest) -> Dict[str, Any]:
+    """
+    Pragmatic OpenAI-compatible rerank endpoint.
+
+    Request mirrors common community conventions: {query, documents, top_n, return_documents}.
+    Response returns {object: "list", data: [{index, score, document?}], model, usage}.
+    """
+    try:
+        service = await get_reranking_service()
+        internal = OpenAIRerankRequest.to_internal(request)
+        result = await service.rerank_passages(internal)
+
+        # Build data items
+        data_items: List[Dict[str, Any]] = []
+        for r in result.results:
+            item = {"index": r.index, "score": float(r.score)}
+            if request.return_documents and hasattr(r, "text") and r.text is not None:
+                item["document"] = r.text
+            data_items.append(item)
+
+        # Optional sigmoid normalization controlled by settings
+        try:
+            from math import exp
+            from app.config import settings as _settings
+            if _settings.openai_rerank_auto_sigmoid:
+                for item in data_items:
+                    s = float(item["score"]) if "score" in item else 0.0
+                    item["score"] = 1.0 / (1.0 + exp(-s))
+        except Exception:
+            pass
+
+        # Create response
+        usage = OpenAIRerankUsage(
+            total_passages=result.usage.get("total_passages", len(internal.passages)),
+            returned_passages=result.usage.get("returned_passages", len(result.results)),
+            total_tokens=len(internal.query.split()),
+        )
+
+        response: Dict[str, Any] = {
+            "object": "list",
+            "data": data_items,
+            "model": service.backend_manager.get_current_backend_info().get("rerank_model_name")
+            or service.backend_manager.get_current_backend_info().get("model_name"),
+            "usage": usage.model_dump(),
+        }
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("💥 OpenAI-compatible rerank failed", error=str(e))
+        raise HTTPException(status_code=500, detail={"error": {"message": str(e), "type": "internal"}})

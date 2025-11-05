@@ -23,6 +23,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from .backends.base import BackendManager
+from . import __version__
 from .backends.factory import BackendFactory
 from .config import settings
 from .models.responses import ErrorResponse
@@ -42,6 +43,8 @@ logger = setup_logging(settings.log_level, settings.log_format)
 # 🌟 Global state management - keeping our Apple MLX backend ready for action
 backend_manager: BackendManager = None
 reranker_backend_manager: BackendManager = None
+# Track reranker init error (for visibility in root/health)
+_reranker_init_error: str | None = None
 startup_time = None
 
 
@@ -57,7 +60,7 @@ async def lifespan(app: FastAPI):
     The lifespan pattern ensures our MLX model is ready before any requests
     arrive, delivering that instant-on experience Apple Silicon deserves.
     """
-    global backend_manager, reranker_backend_manager, startup_time
+    global backend_manager, reranker_backend_manager, startup_time, _reranker_init_error
 
     startup_time = time.time()
     logger.info("🚀 Starting Apple MLX-powered application initialization")
@@ -90,6 +93,11 @@ async def lifespan(app: FastAPI):
         # 🔗 Set embedding service for OpenAI and TEI routers
         openai_router.set_embedding_service(embedding_service)
         tei_router.set_embedding_service(embedding_service)
+        # ➕ Expose embedding service to health router for richer metadata
+        try:
+            health_router.set_embedding_service(embedding_service)
+        except Exception:
+            pass
 
         # 🚦 Optionally initialize dedicated reranker backend if configured
         if settings.cross_encoder_model:
@@ -103,15 +111,20 @@ async def lifespan(app: FastAPI):
                 logger.info("🧠 Initializing Cross-Encoder Reranker backend")
                 await reranker_backend_manager.initialize()
                 reranking_router.set_reranker_backend_manager(reranker_backend_manager)
+                # Expose reranker in health as well
+                health_router.set_reranker_backend_manager(reranker_backend_manager)
+                # Expose reranker in OpenAI compatibility router
+                openai_router.set_reranker_backend_manager(reranker_backend_manager)
                 logger.info(
                     "✅ Reranker backend ready",
                     backend=rerank_backend.__class__.__name__,
                     model_name=settings.cross_encoder_model,
                 )
             except Exception as e:
+                _reranker_init_error = str(e)
                 logger.warning(
                     "⚠️ Failed to initialize dedicated reranker backend; falling back to embedding-based rerank",
-                    error=str(e),
+                    error=_reranker_init_error,
                 )
 
         # ⏱️ Track our lightning-fast startup time
@@ -123,6 +136,19 @@ async def lifespan(app: FastAPI):
             backend=backend.__class__.__name__,
             model_name=settings.model_name,
         )
+
+        # 🔍 Surface critical runtime settings for troubleshooting
+        try:
+            logger.info(
+                "🧭 Runtime settings",
+                dimension_strategy=settings.dimension_strategy,
+                output_embedding_dimension=getattr(settings, "output_embedding_dimension", None),
+                reranker_backend=settings.reranker_backend,
+                cross_encoder_model=getattr(settings, "cross_encoder_model", None),
+                openai_rerank_auto_sigmoid=settings.openai_rerank_auto_sigmoid,
+            )
+        except Exception:
+            pass
 
         yield
 
@@ -138,7 +164,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="🚀 Apple MLX Embed-Rerank API",
     description="Production-ready text embedding and document reranking service powered by Apple Silicon & MLX",
-    version="1.2.0",
+    version=__version__,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -298,6 +324,16 @@ app.include_router(
 )
 
 # 🔄 OpenAI Compatibility Router: Drop-in Replacement Magic
+# 🎯 Cohere Compatibility Router: Cohere API Drop-in Replacement
+app.include_router(
+    cohere_router.router,
+    responses={
+        503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"},
+        400: {"model": ErrorResponse, "description": "Invalid Request"},
+    },
+)
+
+# 🔄 OpenAI Compatibility Router: Drop-in Replacement Magic
 app.include_router(
     openai_router.router,
     responses={
@@ -315,15 +351,6 @@ app.include_router(
     },
 )
 
-# 🎯 Cohere Compatibility Router: Cohere API Drop-in Replacement
-app.include_router(
-    cohere_router.router,
-    responses={
-        503: {"model": ErrorResponse, "description": "Apple MLX Service Unavailable"},
-        400: {"model": ErrorResponse, "description": "Invalid Request"},
-    },
-)
-
 
 @app.get("/", tags=["root"])
 async def root():
@@ -333,9 +360,97 @@ async def root():
     This is your gateway to Apple Silicon-powered embeddings and reranking.
     Get a quick overview of our MLX-accelerated capabilities and service status.
     """
+    # Build embedding and reranker specs for quick visibility
+    embedding_spec = None
+    if backend_manager and backend_manager.is_ready():
+        try:
+            backend_health = await backend_manager.health_check()
+            backend_info = backend_manager.get_current_backend_info()
+            # Determine effective served dimension based on settings
+            effective_dim = backend_health.get("embedding_dim")
+            try:
+                if settings.dimension_strategy == "hidden_size":
+                    # Prefer HF metadata embedding_dimension when available; fall back to backend hidden_size
+                    try:
+                        from app.utils.model_metadata import ModelMetadataExtractor
+
+                        extractor = ModelMetadataExtractor()
+                        model_name = backend_info.get("model_name", "")
+                        path = extractor.get_model_cache_path(model_name) if model_name else None
+                        if path:
+                            md = extractor.extract_metadata_from_path(str(path))
+                            md_dim = md.get("embedding_dimension")
+                            if isinstance(md_dim, int) and md_dim > 0:
+                                effective_dim = md_dim
+                            else:
+                                hs = backend_info.get("hidden_size")
+                                if isinstance(hs, int) and hs > 0:
+                                    effective_dim = hs
+                    except Exception:
+                        hs = backend_info.get("hidden_size")
+                        if isinstance(hs, int) and hs > 0:
+                            effective_dim = hs
+                elif settings.dimension_strategy == "pad_or_truncate":
+                    if settings.output_embedding_dimension and settings.output_embedding_dimension > 0:
+                        effective_dim = int(settings.output_embedding_dimension)
+            except Exception:
+                pass
+            embedding_spec = {
+                "backend": backend_info.get("name"),
+                "model_name": backend_info.get("model_name"),
+                "device": backend_info.get("device"),
+                "embedding_dimension": effective_dim,
+                # Expose model hidden size from config for clarity (may differ from output dimension)
+                "hidden_size": backend_info.get("hidden_size"),
+                "dimension_strategy": settings.dimension_strategy,
+                "output_embedding_dimension": getattr(settings, "output_embedding_dimension", None),
+            }
+        except Exception:
+            embedding_spec = None
+
+    reranker_spec = None
+    try:
+        if 'reranker_backend_manager' in globals() and reranker_backend_manager and reranker_backend_manager.is_ready():
+            r_info = reranker_backend_manager.get_current_backend_info()
+            reranker_spec = {
+                "backend": r_info.get("name"),
+                "model_name": r_info.get("model_name"),
+                "device": r_info.get("device"),
+                "status": r_info.get("status"),
+                # MLX v1 extras (if present)
+                "pooling": r_info.get("pooling"),
+                "score_norm": r_info.get("score_norm"),
+                "method": r_info.get("rerank_method") or r_info.get("method"),
+            }
+        else:
+            # Surface fallback or init status for visibility
+            desired = getattr(settings, "cross_encoder_model", None)
+            if desired:
+                reranker_spec = {
+                    "backend": settings.reranker_backend,
+                    "model_name": desired,
+                    "device": None,
+                    "status": "initializing" if _reranker_init_error is None else "error",
+                    "error": _reranker_init_error,
+                    "method": "cross-encoder",
+                }
+            else:
+                # Explicitly show embedding-similarity fallback
+                if backend_manager and backend_manager.is_ready():
+                    r_info = backend_manager.get_current_backend_info()
+                    reranker_spec = {
+                        "backend": r_info.get("name"),
+                        "model_name": r_info.get("model_name"),
+                        "device": r_info.get("device"),
+                        "status": r_info.get("status"),
+                        "method": "embedding_similarity",
+                    }
+    except Exception:
+        reranker_spec = None
+
     return {
         "name": "🚀 Apple MLX Embed-Rerank API",
-        "version": "1.2.0",
+        "version": __version__,
         "description": "Production-ready text embedding and document reranking service powered by Apple Silicon & MLX",
         "powered_by": "Apple MLX Framework",
         "optimized_for": "Apple Silicon",
@@ -359,6 +474,8 @@ async def root():
         "backend": backend_manager.backend.__class__.__name__ if backend_manager else "initializing",
         "status": "🚀 ready" if backend_manager and backend_manager.is_ready() else "🔄 initializing",
         "apple_silicon": True,
+        "embedding": embedding_spec,
+        "reranker": reranker_spec,
     }
 
 

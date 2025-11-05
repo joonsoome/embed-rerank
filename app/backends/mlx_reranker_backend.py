@@ -54,7 +54,15 @@ def _mx_array(x):
 class MLXCrossEncoderBackend(BaseBackend):
     """MLX-native reranker (pooled token embeddings + linear head)."""
 
-    def __init__(self, model_name: str, device: Optional[str] = None, batch_size: int = 16, max_length: int = 512):
+    def __init__(
+        self,
+        model_name: str,
+        device: Optional[str] = None,
+        batch_size: int = 16,
+        max_length: int = 512,
+        pooling: str = "mean",
+        score_norm: str = "none",
+    ):
         if not MLX_AVAILABLE:
             raise RuntimeError(
                 "MLX backend requested but MLX is not available on this system.\n"
@@ -69,6 +77,8 @@ class MLXCrossEncoderBackend(BaseBackend):
         self.config: Dict[str, Any] = {}
         self._embed_weight = None  # token embedding matrix (MLX/Numpy)
         self._cls_head: Optional[Tuple[np.ndarray, float]] = None  # (w, b)
+        self._pooling = pooling if pooling in ("mean", "cls") else "mean"
+        self._score_norm = score_norm if score_norm in ("none", "sigmoid", "minmax") else "none"
 
     async def load_model(self) -> None:
         if self._is_loaded:
@@ -237,16 +247,23 @@ class MLXCrossEncoderBackend(BaseBackend):
         return np.vstack(all_vecs)
 
     def _pooled_embeddings(self, input_ids: np.ndarray, hidden: int) -> np.ndarray:
-        # If embedding weights present: lookup and mean-pool; else deterministic fallback
+        # If embedding weights present: lookup and pool according to strategy; else deterministic fallback
         if self._embed_weight is not None and MLX_AVAILABLE and mx is not None:
             ids_mx = _mx_array(input_ids)
-            emb = self._embed_weight[ids_mx]
-            pooled = mx.mean(emb, axis=1)
+            emb = self._embed_weight[ids_mx]  # [B, T, H]
+            if self._pooling == "cls":
+                pooled = emb[:, 0, :]
+            else:
+                pooled = mx.mean(emb, axis=1)
             return np.array(pooled)
         # Fallback: deterministic pseudo-embeddings based on ids
         out = []
         for row in input_ids:
-            seed = hash(tuple(int(x) for x in row.tolist())) % (2**32 - 1)
+            if self._pooling == "cls":
+                seed_val = int(row[0]) if row.size > 0 else 0
+                seed = seed_val % (2**32 - 1)
+            else:
+                seed = hash(tuple(int(x) for x in row.tolist())) % (2**32 - 1)
             rng = np.random.default_rng(seed)
             v = rng.standard_normal(hidden).astype(np.float32)
             v /= np.linalg.norm(v) + 1e-8
@@ -263,6 +280,8 @@ class MLXCrossEncoderBackend(BaseBackend):
             "rerank_model_name": self.model_name,
             "backend": "mlx",
             "batch_size": self._batch_size,
+            "pooling": getattr(self, "_pooling", "mean"),
+            "score_norm": getattr(self, "_score_norm", "none"),
             "implemented": True,
         }
 
@@ -309,9 +328,37 @@ class MLXCrossEncoderBackend(BaseBackend):
 
         # Linear head scoring: score = w·x + b
         w, b = self._cls_head if self._cls_head is not None else self._load_linear_head(self.model_dir or "", self.config)
-        scores = pair_vecs @ w.reshape(-1, 1)
+        # Ensure head dimension matches pooled embedding dimension; pad/truncate as pragmatic fix
+        try:
+            head_dim = int(getattr(w, 'shape', [0])[0] if hasattr(w, 'shape') else len(w))
+        except Exception:
+            head_dim = 0
+        pooled_dim = int(pair_vecs.shape[1]) if pair_vecs.ndim == 2 else head_dim
+        if head_dim != pooled_dim:
+            try:
+                w_arr = np.asarray(w, dtype=np.float32).reshape(-1)
+                if w_arr.shape[0] < pooled_dim:
+                    # pad with zeros
+                    pad = np.zeros((pooled_dim - w_arr.shape[0],), dtype=np.float32)
+                    w = np.concatenate([w_arr, pad])
+                elif w_arr.shape[0] > pooled_dim:
+                    # truncate
+                    w = w_arr[:pooled_dim]
+                else:
+                    w = w_arr
+            except Exception:
+                # Fallback: regenerate a deterministic head of correct size
+                w, b = self._load_linear_head(self.model_dir or "", {**self.config, "hidden_size": pooled_dim})
+        scores = pair_vecs @ np.asarray(w, dtype=np.float32).reshape(-1, 1)
         scores = scores.squeeze(-1) + b
 
-        # Optional: squash to [0,1] for consistency
-        # scores = 1 / (1 + np.exp(-scores))
+        # Optional score normalization
+        if self._score_norm == "sigmoid":
+            scores = 1.0 / (1.0 + np.exp(-scores))
+        elif self._score_norm == "minmax":
+            s_min = float(np.min(scores))
+            s_max = float(np.max(scores))
+            denom = (s_max - s_min) if (s_max - s_min) > 1e-8 else 1.0
+            scores = (scores - s_min) / denom
+
         return [float(s) for s in scores.tolist()]

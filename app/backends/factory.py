@@ -186,6 +186,8 @@ class BackendFactory:
                 device="mlx",
                 batch_size=kwargs.get("batch_size", 16),
                 max_length=kwargs.get("max_length", settings.rerank_max_seq_len or 512),
+                pooling=kwargs.get("pooling", settings.rerank_pooling),
+                score_norm=kwargs.get("score_norm", settings.rerank_score_norm),
             )
 
         raise ValueError(f"Unknown reranker backend type: {backend_type}")

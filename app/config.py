@@ -33,8 +33,8 @@ class Settings(BaseSettings):
         description="Cross-encoder model for reranking",
         validation_alias=AliasChoices(
             "RERANKER_MODEL_ID",
+            "RERANKER_MODEL_NAME",  # prefer explicit alias first
             "CROSS_ENCODER_MODEL",
-            "RERANKER_MODEL_NAME",  # accept legacy/env convenience name
             "cross_encoder_model",
         ),
     )
@@ -50,6 +50,40 @@ class Settings(BaseSettings):
         default=None,
         description="Optional override for reranker batch size",
         validation_alias=AliasChoices("RERANK_BATCH_SIZE", "rerank_batch_size"),
+    )
+    # Reranker pooling and score normalization (experimental MLX)
+    rerank_pooling: Literal["mean", "cls"] = Field(
+        default="mean",
+        description="Pooling strategy for MLX reranker (mean or cls)",
+        validation_alias=AliasChoices("RERANK_POOLING", "rerank_pooling"),
+    )
+    rerank_score_norm: Literal["none", "sigmoid", "minmax"] = Field(
+        default="none",
+        description="Score normalization strategy for reranker outputs",
+        validation_alias=AliasChoices("RERANK_SCORE_NORM", "rerank_score_norm"),
+    )
+    # OpenAI compatibility toggles
+    openai_rerank_auto_sigmoid: bool = Field(
+        default=True,
+        description="Automatically apply sigmoid normalization for OpenAI-compatible rerank requests",
+        validation_alias=AliasChoices("OPENAI_RERANK_AUTO_SIGMOID", "openai_rerank_auto_sigmoid"),
+    )
+
+    # Embedding output dimension controls (env-configurable)
+    output_embedding_dimension: Optional[int] = Field(
+        default=None,
+        description="If set, enforce this embedding dimension for outputs (padding/truncation)",
+        validation_alias=AliasChoices("OUTPUT_EMBEDDING_DIMENSION", "output_embedding_dimension"),
+    )
+    dimension_strategy: Literal["as_is", "pad_or_truncate", "hidden_size"] = Field(
+        default="as_is",
+        description=(
+            "How to determine final embedding dimension: "
+            "'as_is' = use backend output; "
+            "'pad_or_truncate' = enforce OUTPUT_EMBEDDING_DIMENSION; "
+            "'hidden_size' = enforce model hidden_size from config"
+        ),
+        validation_alias=AliasChoices("DIMENSION_STRATEGY", "dimension_strategy"),
     )
 
     # Performance Settings
@@ -108,6 +142,28 @@ class Settings(BaseSettings):
         """Validate model path if specified."""
         if v is not None and not v.exists():
             raise ValueError(f"Model path does not exist: {v}")
+        return v
+
+    @field_validator("cross_encoder_model")
+    @classmethod
+    def empty_string_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize empty strings from env into None so other aliases can take effect."""
+        if v is not None and str(v).strip() == "":
+            return None
+        return v
+
+    @field_validator(
+        "output_embedding_dimension",
+        "default_max_tokens_override",
+        "rerank_max_seq_len",
+        "rerank_batch_size",
+        mode="before",
+    )
+    @classmethod
+    def empty_string_ints_to_none(cls, v):
+        """Treat empty-string values for optional int fields as None to avoid validation errors."""
+        if isinstance(v, str) and v.strip() == "":
+            return None
         return v
 
     @field_validator("batch_size", "max_batch_size")

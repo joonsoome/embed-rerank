@@ -244,21 +244,79 @@ class EmbeddingService:
         # Generate embeddings using backend
         result = await backend.embed_texts(texts=texts, batch_size=batch_size)
 
-        # Extract vectors from result
-        embeddings = result.vectors.tolist() if hasattr(result.vectors, 'tolist') else result.vectors
+        # Extract vectors from result (as numpy array for processing)
+        import numpy as np
+
+        embeddings_array = (
+            np.array(result.vectors) if not hasattr(result.vectors, 'tolist') else np.array(result.vectors)
+        )
+
+        # Determine target dimension based on configuration
+        target_dim: Optional[int] = None
+        chosen_reason: str = "as_is"
+
+        try:
+            if self.config.dimension_strategy == "hidden_size":
+                backend_info = self.backend_manager.get_current_backend_info()
+                hs = backend_info.get("hidden_size")
+
+                # Try to get HF metadata embedding dimension as the authoritative spec
+                md_dim: Optional[int] = None
+                try:
+                    model_name = backend_info.get("model_name", "")
+                    from app.utils.model_metadata import ModelMetadataExtractor
+
+                    extractor = ModelMetadataExtractor()
+                    path = extractor.get_model_cache_path(model_name) if model_name else None
+                    if path:
+                        md = extractor.extract_metadata_from_path(str(path))
+                        maybe = md.get("embedding_dimension")
+                        if isinstance(maybe, int) and maybe > 0:
+                            md_dim = maybe
+                except Exception:
+                    md_dim = None
+
+                # Prefer metadata dimension when available; otherwise use hidden_size from backend
+                if isinstance(md_dim, int) and md_dim > 0:
+                    target_dim = md_dim
+                    chosen_reason = "hf_metadata_embedding_dimension"
+                elif isinstance(hs, int) and hs > 0:
+                    target_dim = hs
+                    chosen_reason = "backend_hidden_size"
+            elif self.config.dimension_strategy == "pad_or_truncate":
+                if self.config.output_embedding_dimension and self.config.output_embedding_dimension > 0:
+                    target_dim = int(self.config.output_embedding_dimension)
+                    chosen_reason = "pad_or_truncate_env"
+        except Exception:
+            # Fall back gracefully if any metadata missing
+            target_dim = None
+            chosen_reason = "as_is_exception"
+
+        # If target dimension is specified and differs, adjust BEFORE normalization
+        if target_dim and embeddings_array.shape[1] != target_dim:
+            before = embeddings_array.shape[1]
+            if embeddings_array.shape[1] > target_dim:
+                embeddings_array = embeddings_array[:, :target_dim]
+            else:
+                pad = target_dim - embeddings_array.shape[1]
+                embeddings_array = np.pad(embeddings_array, ((0, 0), (0, pad)), mode='constant', constant_values=0.0)
+            try:
+                msg = (
+                    f"🔧 Adjusted embedding dimension from {before} to {target_dim} "
+                    f"(strategy={getattr(self.config, 'dimension_strategy', 'unknown')}, reason={chosen_reason})"
+                )
+                logger.info(msg)
+            except Exception:
+                # Never let logging break the request
+                pass
 
         # Apply normalization if requested
         if normalize:
-            import numpy as np
-
-            embeddings_array = np.array(embeddings)
-            # L2 normalization
             norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
             norms[norms == 0] = 1  # Avoid division by zero
             embeddings_array = embeddings_array / norms
-            embeddings = embeddings_array.tolist()
 
-        return embeddings
+        return embeddings_array.tolist()
 
     def get_service_info(self) -> Dict[str, Any]:
         """

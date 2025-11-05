@@ -608,6 +608,11 @@ class MLXBackend(BaseBackend):
                     {
                         "mlx_device": "apple_silicon",
                         "memory_usage": "unified_memory",
+                        # Surface key config values to aid troubleshooting (e.g., hidden_size vs output dim)
+                        "hidden_size": (self.config.get("hidden_size") if isinstance(self.config, dict) else None),
+                        "max_position_embeddings": (
+                            self.config.get("max_position_embeddings") if isinstance(self.config, dict) else None
+                        ),
                     }
                 )
             except Exception as e:
