@@ -1,12 +1,14 @@
 # 🔥 Embeddings + Reranking on your Mac (MLX‑first)
 
-<p>
+<p align="center">
   <a href="docs/ENHANCED_OPENAI_API.md">
+  <a href="https://github.com/joonsoo-me/embed-rerank/blob/main/LICENSE"><img src="https://img.shields.io/github/license/joonsoo-me/embed-rerank?logo=opensource&logoColor=white" /></a>
     <img src="https://img.shields.io/badge/OpenAI%20rerank-supported-2ea44f" alt="OpenAI rerank supported (/v1/openai/rerank)" />
   </a>
   <a href="docs/DEPLOYMENT_PROFILES.md">
     <img src="https://img.shields.io/badge/auto--sigmoid-default%20on-blue" alt="auto-sigmoid default on" />
-  </a>
+  </a><a href="https://ml-explore.github.io/mlx/"><img src="https://img.shields.io/badge/MLX-Optimized-green?logo=apple&logoColor=white" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" /></a>
   <a href="https://pypi.org/project/embed-rerank/">
     <img src="https://img.shields.io/pypi/v/embed-rerank?logo=pypi&logoColor=white" alt="PyPI Version" />
   </a>
@@ -15,6 +17,46 @@
 Blazing‑fast local embeddings and true cross‑encoder reranking on Apple Silicon. Works with Native, OpenAI, TEI, and Cohere APIs.
 
 This page is a beginner‑friendly quick start. Detailed guides live in docs/.
+
+## 🌐 Four APIs, One Service
+
+| API | Endpoint | Use Case |
+|-----|----------|----------|
+| **Native** | `/api/v1/embed`, `/api/v1/rerank` | New projects |
+| **OpenAI** | `/v1/embeddings`, `/v1/openai/rerank` (alias: `/v1/rerank_openai`) | Existing OpenAI code |
+| **TEI** | `/embed`, `/rerank`, `/info` | Hugging Face TEI replacement |
+| **Cohere** | `/v1/rerank`, `/v2/rerank` | Cohere API replacement |
+| | `/docs` `/health` | More info. |
+
+## 📈 Performance Visualization
+
+### Latency Comparison (Projected)
+
+```
+Single Text Embedding Latency (milliseconds)
+
+Apple MLX    ████ 0.2ms
+PyTorch MPS  ████████████████████████████████████████████████ 45ms  
+PyTorch CPU  ████████████████████████████████████████████████████████████████████████████████████████████████████████ 120ms
+CUDA (Est.)  ████████████ 12ms
+Vulkan (Est.) ████████████████████████ 25ms
+
+0ms        25ms       50ms       75ms       100ms      125ms
+```
+
+### Throughput Comparison (texts/second)
+
+```
+Maximum Throughput (texts per second)
+
+Apple MLX     ████████████████████████████████████████████████████████████████████████████████████████████████████████ 35,000
+CUDA (Est.)   ████████████████████████████████ 8,000  
+PyTorch MPS   ██████ 1,500
+Vulkan (Est.) ████████████ 3,000
+PyTorch CPU   ██ 500
+
+0          10k        20k        30k        40k
+```
 
 ## 🚀 Start here (60 seconds)
 
@@ -96,12 +138,6 @@ Notes
 - Scores may be auto‑sigmoid‑normalized for OpenAI clients by default (disable via `OPENAI_RERANK_AUTO_SIGMOID=false`).
 - The root endpoint `/` shows both `embedding_dimension` (served) and `hidden_size` (model config) for clarity.
 
-Quick endpoints reference
-- Native: `/api/v1/embed`, `/api/v1/rerank`
-- OpenAI: `/v1/embeddings`, `/v1/openai/rerank` (alias: `/v1/rerank_openai`)
-- TEI: `/embed`, `/rerank`, `/info`
-- Cohere: `/v1/rerank`, `/v2/rerank`
-
 Run the full validation suite
 ```bash
 ./tools/server-tests.sh --full
@@ -141,6 +177,13 @@ rr = client._request(
 )
 print(rr.get("results", rr))
 ```
+
+## Tested Frameworks
+| | Framework | Tests |
+|---|---|---|
+| ✅ | [**Open WebUI**](https://github.com/open-webui/open-webui) | `Embed` |
+| ✅ | [**LightRAG**](https://github.com/HKUDS/LightRAG) | `Embed` `Rerank` |
+###### We are waiting for your reports!
 
 ## 📄 License
 

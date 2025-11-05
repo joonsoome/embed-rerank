@@ -221,3 +221,4 @@ tools/test-results/
 
 # Test
 .env
+pyproject.toml
