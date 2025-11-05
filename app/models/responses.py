@@ -169,6 +169,23 @@ class HealthResponse(BaseModel):
         description="Performance metrics",
         json_schema_extra={"example": {"test_embedding_time": 0.045, "embedding_dimension": 384}},
     )
+    # Optional reranker information (when a dedicated reranker backend is configured)
+    reranker: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Reranker backend information",
+        json_schema_extra={
+            "example": {
+                "name": "MLXCrossEncoderBackend",
+                "type": "mlx",
+                "status": "ready",
+                "model_name": "vserifsaglam/Qwen3-Reranker-4B-4bit-MLX",
+                "device": "mlx",
+                "pooling": "mean",
+                "score_norm": "none",
+                "method": "cross-encoder-lite",
+            }
+        },
+    )
 
 
 class ErrorResponse(BaseModel):

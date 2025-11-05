@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..backends.base import BackendManager
@@ -44,12 +44,19 @@ router = APIRouter(
 
 # This will be set by the main app
 _backend_manager: BackendManager = None
+_reranker_backend_manager: BackendManager = None
 
 
 def set_backend_manager(manager: BackendManager):
     """Set the backend manager instance."""
     global _backend_manager
     _backend_manager = manager
+
+
+def set_reranker_backend_manager(manager: BackendManager):
+    """Set a dedicated reranker backend manager (cross-encoder)."""
+    global _reranker_backend_manager
+    _reranker_backend_manager = manager
 
 
 async def get_backend_manager() -> BackendManager:
@@ -61,13 +68,21 @@ async def get_backend_manager() -> BackendManager:
 
 async def get_reranking_service(manager: BackendManager = Depends(get_backend_manager)) -> RerankingService:
     """Dependency to get the reranking service."""
+    # Prefer dedicated reranker backend if configured and ready
+    if _reranker_backend_manager is not None and _reranker_backend_manager.is_ready():
+        return RerankingService(_reranker_backend_manager)
+    # Fallback to embedding backend
     if not manager.is_ready():
         raise HTTPException(status_code=503, detail="Backend not ready. Please wait for model initialization.")
     return RerankingService(manager)
 
 
 @router.post("/")
-async def rerank_passages(request: RerankRequest, service: RerankingService = Depends(get_reranking_service)):
+async def rerank_passages(
+    request: RerankRequest,
+    http_request: Request,
+    service: RerankingService = Depends(get_reranking_service),
+):
     """
     Rerank passages based on relevance to the query.
 
@@ -88,6 +103,32 @@ async def rerank_passages(request: RerankRequest, service: RerankingService = De
         # Convert to dict and filter None values
         response_dict = response.model_dump()
         filtered_response = filter_none_values(response_dict)
+
+        # Optionally auto-normalize scores for OpenAI-compatible clients
+        try:
+            from math import exp
+            from app.config import settings as _settings
+
+            def _should_auto_sigmoid(req: Request | None) -> bool:
+                if not _settings.openai_rerank_auto_sigmoid:
+                    return False
+                if req is None:
+                    return False
+                ua = (req.headers.get("user-agent") or "").lower()
+                if "openai" in ua:
+                    return True
+                # explicit hint header
+                if (req.headers.get("x-openai-compat") or "").lower() == "true":
+                    return True
+                return False
+
+            if _should_auto_sigmoid(http_request):
+                for item in filtered_response.get("results", []):
+                    s = float(item.get("score", 0.0))
+                    item["score"] = 1.0 / (1.0 + exp(-s))
+        except Exception:
+            # Never fail the request due to normalization
+            pass
 
         # Add backward-compatible num_passages field
         filtered_response["num_passages"] = len(filtered_response.get("results", []))
@@ -111,7 +152,9 @@ async def rerank_passages(request: RerankRequest, service: RerankingService = De
 
 @router.post("/batch", response_model=List[RerankResponse])
 async def batch_rerank_passages(
-    requests: List[RerankRequest], service: RerankingService = Depends(get_reranking_service)
+    requests: List[RerankRequest],
+    http_request: Request,
+    service: RerankingService = Depends(get_reranking_service),
 ):
     """
     Perform batch reranking for multiple queries.
@@ -139,6 +182,30 @@ async def batch_rerank_passages(
                 responses.append(response)
             except Exception as e:
                 raise ValueError(f"Error in batch item {i}: {str(e)}")
+
+        # Apply same OpenAI auto-sigmoid if enabled
+        try:
+            from math import exp
+            from app.config import settings as _settings
+
+            def _should_auto_sigmoid(req: Request | None) -> bool:
+                if not _settings.openai_rerank_auto_sigmoid:
+                    return False
+                if req is None:
+                    return False
+                ua = (req.headers.get("user-agent") or "").lower()
+                if "openai" in ua:
+                    return True
+                if (req.headers.get("x-openai-compat") or "").lower() == "true":
+                    return True
+                return False
+
+            if _should_auto_sigmoid(http_request):
+                for r in responses:
+                    for item in r.results:
+                        item.score = 1.0 / (1.0 + exp(-float(item.score)))
+        except Exception:
+            pass
 
         return responses
 

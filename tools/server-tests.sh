@@ -1073,6 +1073,36 @@ except Exception as e:
     fi
 }
 
+run_rerank_quality_only() {
+    print_header "🎯 Running Rerank Quality (MRR/nDCG)"
+    local output_file="$OUTPUT_DIR/${RESULTS_PREFIX}_rerank_quality.json"
+    local log_file="$OUTPUT_DIR/${RESULTS_PREFIX}_rerank_quality.log"
+
+    print_step "Computing MRR@k and nDCG@k on a small dataset..."
+    print_status "info" "Output: $output_file"
+    print_status "info" "Log: $log_file"
+
+    if python3 "$SCRIPT_DIR/tests/quality-rerank-only.py" --host "$SERVER_URL" --k 3 \
+        > "$output_file" 2> "$log_file"; then
+        print_status "success" "Rerank quality metrics computed"
+        # Show summary
+        local summary=$(python3 -c '
+import json,sys
+with open(sys.argv[1]) as f:
+    d=json.load(f)
+print(f"k={d.get('k')} samples={d.get('samples')} avgMRR={d.get('average_MRR@k'):.3f} avgNDCG={d.get('average_nDCG@k'):.3f}")
+' "$output_file" 2>/dev/null || true)
+        if [[ -n "$summary" ]]; then
+            print_status "info" "$summary"
+        fi
+        return 0
+    else
+        print_status "error" "Failed to compute rerank quality metrics"
+        [[ -f "$log_file" ]] && cat "$log_file"
+        return 1
+    fi
+}
+
 run_performance_benchmark() {
     print_header "⚡ Running Performance Benchmark Tests"
     
@@ -1307,6 +1337,7 @@ Usage: $0 [OPTIONS]
 Test Modes:
   --quick             Quick validation only (health + basic tests)
   --quality           Quality validation tests only
+    --quality-rerank-only  Rerank-only quality metrics (MRR/nDCG) on tiny dataset (NEW!)
   --performance       Performance benchmark tests only
   --text-processing   Text processing strategy tests only
   --api-compatibility Multi-API compatibility tests (Native, OpenAI, TEI, Cohere) (NEW!)
@@ -1321,6 +1352,7 @@ Examples:
   $0                                    # Full test suite
   $0 --quick                           # Quick validation
   $0 --performance                     # Performance tests only
+    $0 --quality-rerank-only             # Rerank-only quality metrics (NEW!)
   $0 --text-processing                 # Text processing tests only
   $0 --api-compatibility               # Multi-API compatibility tests (NEW!)
   $0 --url http://localhost:8080       # Custom server URL
@@ -1348,6 +1380,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --performance)
             TEST_MODE="performance"
+            shift
+            ;;
+        --quality-rerank-only)
+            TEST_MODE="quality-rerank-only"
             shift
             ;;
         --text-processing)
@@ -1430,6 +1466,12 @@ main() {
         "api-compatibility")
             ((total_tests++))
             if run_api_compatibility_tests; then
+                ((tests_passed++))
+            fi
+            ;;
+        "quality-rerank-only")
+            ((total_tests++))
+            if run_rerank_quality_only; then
                 ((tests_passed++))
             fi
             ;;
