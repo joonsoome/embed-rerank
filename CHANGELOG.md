@@ -5,6 +5,15 @@ All notable changes to the Apple MLX Embed-Rerank API project will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2025-11-14
+
+### Fixed
+- Cohere-compatible rerank endpoints now omit the `document` field entirely when `return_documents` is `false`, instead of returning `document: null`. This avoids validation errors in strict clients (e.g. LiteLLM’s `RerankResponse` schema).
+- Cohere v2 rerank tests tightened to assert that `document` is absent when `return_documents=false`, preventing regressions.
+
+### Changed
+- Example `.env.example` updated to reflect the current default configuration (MLX Qwen3 embedding model, `DIMENSION_STRATEGY=hidden_size`, and clarified reranker settings).
+
 ## [1.2.0] - 2025-09-10
  
 ## [1.2.3] - 2025-10-30

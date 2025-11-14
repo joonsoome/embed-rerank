@@ -8,6 +8,7 @@ Bringing sub-millisecond reranking to Cohere-compatible applications.
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from ..backends.base import BackendManager
 from ..models.cohere_models import CohereRerankRequest, CohereRerankResponse, CohereRerankResult, CohereDocument
@@ -24,6 +25,21 @@ router = APIRouter(
         422: {"model": ErrorResponse, "description": "Validation Error"},
     },
 )
+
+
+def _filter_none_values(data):
+    """
+    Recursively filter out keys with None values.
+
+    This ensures fields like `document: null` are omitted entirely
+    when `return_documents` is False, matching Cohere API behavior.
+    """
+    if isinstance(data, dict):
+        return {k: _filter_none_values(v) for k, v in data.items() if v is not None}
+    if isinstance(data, list):
+        return [_filter_none_values(item) for item in data]
+    return data
+
 
 # This will be set by the main app
 _backend_manager: BackendManager = None
@@ -113,7 +129,10 @@ async def rerank_v1(request: CohereRerankRequest, service: RerankingService = De
         # Convert back to Cohere format
         cohere_response = convert_to_cohere_response(internal_response, request)
 
-        return cohere_response
+        # Ensure None fields (e.g., document when return_documents=False) are omitted
+        payload = _filter_none_values(cohere_response.model_dump())
+
+        return JSONResponse(content=payload)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
