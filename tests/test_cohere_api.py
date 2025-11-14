@@ -99,7 +99,7 @@ def test_cohere_v2_rerank():
         assert "index" in res, f"Result {i} missing 'index' field"
         assert "relevance_score" in res, f"Result {i} missing 'relevance_score' field"
         # Should not have document field when return_documents=False
-        assert res.get("document") is None, f"Result {i} should not have document field when return_documents=False"
+        assert "document" not in res, f"Result {i} should not have document field when return_documents=False"
         assert isinstance(res["index"], int), f"Result {i} index should be int"
         assert isinstance(res["relevance_score"], (int, float)), f"Result {i} relevance_score should be numeric"
 
