@@ -184,6 +184,7 @@ print(rr.get("results", rr))
 | ✅ | [**Open WebUI**](https://github.com/open-webui/open-webui) | `Embed` |
 | ✅ | [**LightRAG**](https://github.com/HKUDS/LightRAG) | `Embed` `Rerank` |
 | ✅ | [**continue.dev**](https://www.continue.dev) | `Embed` `Rerank` |
+| ✅ | [**Kilo Code**](https://kilocode.ai/) | `Embed` |
 ###### We are waiting for your reports!
 
 ## 📄 License
