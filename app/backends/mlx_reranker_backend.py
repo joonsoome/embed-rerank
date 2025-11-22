@@ -1,12 +1,23 @@
 """
-MLX Cross-Encoder Reranker Backend with Full Transformer Forward Pass
+MLX Cross-Encoder Reranker Backend with Difference Vector Scoring
 
-This backend implements proper cross-encoder reranking using mlx-lm to load
-Qwen3-style reranker models and run the complete transformer forward pass.
+This backend implements cross-encoder reranking using mlx-lm to load
+Qwen3-style reranker models and score query-document relevance.
 
-For reranking, we concatenate query and passage, run through the transformer,
-and use the final hidden state (typically CLS token or mean pooling) with
-a classification head to produce relevance scores.
+Scoring Method (Difference Vector Classification):
+Instead of extracting separate yes/no logits from the LM head (which can be
+biased in quantized models), we use a more robust single-projection approach:
+
+1. Extract lm_head weight vectors for "yes" and "no" tokens
+2. Compute difference vector: cls_vector = yes_vector - no_vector
+3. Project hidden state: logit = hidden @ cls_vector
+4. Apply sigmoid: score = sigmoid(logit)
+
+This is mathematically equivalent to P(yes) vs P(no) comparison but more
+robust to quantization noise because it captures the decision boundary directly.
+
+Based on the sequence classification conversion approach from:
+https://huggingface.co/tomaarsen/Qwen3-Reranker-0.6B-seq-cls
 
 Supported models:
 - galaxycore/Qwen3-Reranker-8B-MLX-4bit
@@ -120,6 +131,7 @@ class MLXCrossEncoderBackend(BaseBackend):
         self.tokenizer = None
         self.config: Dict[str, Any] = {}
         self._hidden_size: int = 4096
+        self._cls_vector: Optional["mx.array"] = None  # Difference vector for classification
 
         logger.info(
             "Initializing MLX Cross-Encoder with full transformer support",
@@ -359,61 +371,135 @@ class MLXCrossEncoderBackend(BaseBackend):
         logger.warning(f"Could not find yes/no tokens, using fallback IDs. yes_id={yes_id}, no_id={no_id}")
         return yes_id or 9891, no_id or 2201
 
-    def _compute_scores_with_lm_head(self, input_ids: "mx.array", attention_mask: "mx.array") -> Optional["mx.array"]:
+    def _init_classification_vector(self) -> bool:
         """
-        Compute scores using the LM head for yes/no logits.
+        Initialize the classification vector from lm_head weights.
 
-        Qwen3-Reranker outputs yes/no and we score based on P(yes) vs P(no).
+        This implements the sequence classification approach from tomaarsen's conversion:
+        Instead of extracting separate yes/no logits, we compute:
+            cls_vector = lm_head[yes_id] - lm_head[no_id]
 
-        CRITICAL: With LEFT PADDING, the last real token is ALWAYS at position -1.
-        This simplifies extraction significantly.
+        Then scoring becomes: score = sigmoid(hidden @ cls_vector)
+
+        This is mathematically equivalent to yes/no logit comparison but more robust
+        to quantization noise because it uses a single projection that directly
+        captures the yes/no decision boundary.
 
         Returns:
-            Scores array or None if LM head not accessible
+            True if initialization succeeded, False otherwise
+        """
+        if self._cls_vector is not None:
+            return True  # Already initialized
+
+        try:
+            if not hasattr(self.model, 'lm_head'):
+                logger.warning("Model does not have lm_head, cannot init classification vector")
+                return False
+
+            # Get yes/no token IDs
+            yes_id, no_id = self._get_yes_no_token_ids()
+
+            # Extract lm_head weight matrix
+            # lm_head.weight shape: [vocab_size, hidden_size] or could be [hidden_size, vocab_size]
+            lm_head = self.model.lm_head
+
+            if hasattr(lm_head, 'weight'):
+                weights = lm_head.weight
+            else:
+                # Some implementations store weights directly
+                logger.warning("lm_head has no 'weight' attribute, trying direct access")
+                return False
+
+            # Determine weight layout and extract yes/no vectors
+            # Typically: [vocab_size, hidden_size] for nn.Embedding-style or transposed for Linear
+            vocab_size = weights.shape[0]
+            hidden_size = weights.shape[1] if len(weights.shape) > 1 else weights.shape[0]
+
+            logger.info(f"lm_head weights shape: {weights.shape}, vocab_size={vocab_size}")
+
+            if vocab_size > hidden_size:
+                # Shape is [vocab_size, hidden_size] - index by first dim
+                yes_vector = weights[yes_id, :]
+                no_vector = weights[no_id, :]
+            else:
+                # Shape is [hidden_size, vocab_size] - index by second dim
+                yes_vector = weights[:, yes_id]
+                no_vector = weights[:, no_id]
+
+            # Compute difference vector: captures the yes/no decision boundary
+            self._cls_vector = yes_vector - no_vector
+
+            # Log vector stats for debugging
+            vec_norm = float(mx.sqrt(mx.sum(self._cls_vector * self._cls_vector)).item())
+            logger.info(
+                f"Classification vector initialized: yes_id={yes_id}, no_id={no_id}, "
+                f"vector_norm={vec_norm:.4f}, hidden_size={self._cls_vector.shape[0]}"
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to initialize classification vector: {e}")
+            return False
+
+    def _compute_scores_with_lm_head(self, input_ids: "mx.array", attention_mask: "mx.array") -> Optional["mx.array"]:
+        """
+        Compute scores using the difference vector classification approach.
+
+        Instead of extracting separate yes/no logits (which can be biased),
+        we use a single projection with the difference vector:
+            logit = hidden @ (yes_vector - no_vector)
+            score = sigmoid(logit)
+
+        This is mathematically equivalent to comparing yes/no probabilities
+        but more robust to quantization noise because:
+        1. It uses a single projection instead of comparing two separate logits
+        2. The difference vector directly captures the yes/no decision boundary
+        3. Sigmoid centers scores around 0.5 for neutral inputs
+
+        CRITICAL: With LEFT PADDING, the last real token is ALWAYS at position -1.
+
+        Returns:
+            Scores array or None if classification vector not available
         """
         try:
-            # Check if model has lm_head
-            if not hasattr(self.model, 'lm_head'):
-                logger.warning("Model does not have lm_head attribute")
+            # Initialize classification vector if not already done
+            if not self._init_classification_vector():
+                logger.warning("Could not initialize classification vector, falling back")
                 return None
 
             # Get hidden states
             hidden_states = self._get_hidden_states(input_ids)
 
             # With LEFT PADDING, last token is always at position -1
-            last_hidden = hidden_states[:, -1, :]
+            last_hidden = hidden_states[:, -1, :]  # [batch_size, hidden_size]
 
-            # Apply LM head to get logits
-            logits = self.model.lm_head(last_hidden)  # [batch_size, vocab_size]
+            # Compute logits using difference vector projection
+            # logit = hidden @ cls_vector (dot product)
+            # This gives us: hidden @ (yes_vec - no_vec) = hidden @ yes_vec - hidden @ no_vec
+            # Which is equivalent to: yes_logit - no_logit
+            logits = mx.sum(last_hidden * self._cls_vector, axis=-1)  # [batch_size]
 
-            # Get yes/no token IDs
-            yes_id, no_id = self._get_yes_no_token_ids()
-
-            # Extract yes/no logits
-            yes_logits = logits[:, yes_id]
-            no_logits = logits[:, no_id]
-
-            # Log the raw logits for visibility (INFO level)
-            batch_size = int(yes_logits.shape[0]) if hasattr(yes_logits, 'shape') else 1
+            # Log the raw logits for visibility
+            batch_size = int(logits.shape[0]) if hasattr(logits, 'shape') else 1
             for i in range(min(batch_size, 3)):  # Log first 3 samples
-                y_val = float(yes_logits[i].item()) if batch_size > 1 else float(yes_logits.item())
-                n_val = float(no_logits[i].item()) if batch_size > 1 else float(no_logits.item())
-                logger.info(f"Sample {i}: yes_logit={y_val:.4f}, no_logit={n_val:.4f}, diff={y_val - n_val:.4f}")
+                logit_val = float(logits[i].item()) if batch_size > 1 else float(logits.item())
+                logger.info(f"Sample {i}: diff_logit={logit_val:.4f} (positive=yes, negative=no)")
 
-            # Compute score as softmax probability of 'yes'
-            # score = exp(yes) / (exp(yes) + exp(no))
-            max_logit = mx.maximum(yes_logits, no_logits)
-            yes_exp = mx.exp(yes_logits - max_logit)
-            no_exp = mx.exp(no_logits - max_logit)
-            scores = yes_exp / (yes_exp + no_exp)
+            # Apply sigmoid to convert to probability
+            # sigmoid(yes_logit - no_logit) = P(yes) when yes/no are the only options
+            scores = mx.sigmoid(logits)
 
             # Log computed scores
-            logger.info(f"LM head yes/no scoring: yes_id={yes_id}, no_id={no_id}, batch_size={batch_size}")
+            logger.info(f"Difference vector scoring: batch_size={batch_size}")
+            for i in range(min(batch_size, 3)):
+                score_val = float(scores[i].item()) if batch_size > 1 else float(scores.item())
+                logger.info(f"Sample {i}: score={score_val:.4f}")
 
             return scores
 
         except Exception as e:
-            logger.warning(f"LM head scoring failed: {e}, falling back to hidden state scoring")
+            logger.warning(f"Difference vector scoring failed: {e}, falling back to hidden state scoring")
             return None
 
     def _compute_scores(self, pooled: "mx.array") -> "mx.array":
