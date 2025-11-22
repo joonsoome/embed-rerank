@@ -64,8 +64,10 @@ class EmbeddingService:
             processed_texts, processing_info_dicts = await self._preprocess_texts(request)
 
             # Get embeddings from backend
+            # Pass is_query for asymmetric retrieval (queries get instruction prefix, documents don't)
+            is_query = request.is_query if request.is_query is not None else False
             embeddings_array = await self._generate_embeddings(
-                texts=processed_texts, batch_size=request.batch_size, normalize=request.normalize
+                texts=processed_texts, batch_size=request.batch_size, normalize=request.normalize, is_query=is_query
             )
 
             # Process results
@@ -223,7 +225,7 @@ class EmbeddingService:
             raise ValueError(f"Text preprocessing failed: {str(e)}") from e
 
     async def _generate_embeddings(
-        self, texts: List[str], batch_size: int, normalize: bool = True
+        self, texts: List[str], batch_size: int, normalize: bool = True, is_query: bool = False
     ) -> List[List[float]]:
         """
         Generate embeddings using the current backend.
@@ -232,6 +234,8 @@ class EmbeddingService:
             texts: List of texts to embed
             batch_size: Batch size for processing
             normalize: Whether to normalize embeddings
+            is_query: Whether texts are queries (True) or documents (False).
+                     Queries get instruction prefix for asymmetric retrieval.
 
         Returns:
             List of embedding vectors
@@ -242,7 +246,12 @@ class EmbeddingService:
             raise ValueError("No backend available")
 
         # Generate embeddings using backend
-        result = await backend.embed_texts(texts=texts, batch_size=batch_size)
+        # Pass is_query for backends that support asymmetric embedding (e.g., MLX with Qwen3)
+        try:
+            result = await backend.embed_texts(texts=texts, batch_size=batch_size, is_query=is_query)
+        except TypeError:
+            # Fallback for backends that don't support is_query parameter
+            result = await backend.embed_texts(texts=texts, batch_size=batch_size)
 
         # Extract vectors from result (as numpy array for processing)
         import numpy as np

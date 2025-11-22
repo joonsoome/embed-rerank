@@ -23,6 +23,15 @@ class EmbedRequest(BaseModel):
     normalize: Optional[bool] = Field(
         True, description="Whether to normalize embeddings to unit length", json_schema_extra={"example": True}
     )
+    is_query: Optional[bool] = Field(
+        False,
+        description=(
+            "Whether texts are queries (True) or documents (False). "
+            "Queries get instruction prefix for asymmetric retrieval. "
+            "Documents are embedded as plain text. Default is False for indexing use cases."
+        ),
+        json_schema_extra={"example": False},
+    )
 
     # Text processing options added
     auto_truncate: Optional[bool] = Field(
