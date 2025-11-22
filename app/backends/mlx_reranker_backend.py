@@ -704,9 +704,10 @@ class MLXCrossEncoderBackend(BaseBackend):
         <Document>: {document}<|im_end|>
         <|im_start|>assistant
 
-        Tries LM head yes/no scoring first, falls back to hidden state scoring.
+        Tries difference vector scoring first, falls back to hidden state scoring.
         """
         all_scores = []
+        used_fallback = False
 
         # Process in batches
         for i in range(0, len(passages), self._batch_size):
@@ -725,17 +726,17 @@ class MLXCrossEncoderBackend(BaseBackend):
             input_ids = _mx_array(encodings['input_ids'])
             attention_mask = _mx_array(encodings['attention_mask'])
 
-            # Try LM head scoring first (proper yes/no logits)
+            # Try difference vector scoring first
             batch_scores_mx = self._compute_scores_with_lm_head(input_ids, attention_mask)
 
             if batch_scores_mx is not None:
-                # LM head scoring succeeded - scores are already in [0, 1]
+                # Difference vector scoring succeeded - scores are already in [0, 1]
                 mx.eval(batch_scores_mx)
                 batch_scores = np.array(batch_scores_mx.tolist(), dtype=np.float32)
-                # These are already normalized probabilities
                 all_scores.extend(batch_scores.tolist())
             else:
                 # Fall back to hidden state scoring
+                used_fallback = True
                 hidden_states = self._get_hidden_states(input_ids)
                 pooled = self._pool_hidden_states(hidden_states, attention_mask)
                 scores = self._compute_scores(pooled)
@@ -743,17 +744,27 @@ class MLXCrossEncoderBackend(BaseBackend):
                 batch_scores = np.array(scores.tolist(), dtype=np.float32)
                 all_scores.extend(batch_scores.tolist())
 
-        # Normalize scores if using hidden state fallback
         scores_array = np.array(all_scores)
 
-        # Check if scores are already normalized (from LM head)
-        if np.all((scores_array >= 0) & (scores_array <= 1)):
-            # Already normalized from LM head
-            return scores_array.tolist()
-        else:
-            # Apply normalization for hidden state scores
-            normalized = self._normalize_scores(scores_array)
+        # Always normalize fallback scores for proper 0-1 range
+        if used_fallback:
+            logger.info(f"Using hidden state fallback scoring, applying minmax normalization")
+            logger.info(f"Raw score range: [{scores_array.min():.6f}, {scores_array.max():.6f}]")
+            # Use minmax for fallback - gives better spread than sigmoid for small values
+            normalized = self._normalize_scores_minmax(scores_array)
+            logger.info(f"Normalized score range: [{normalized.min():.4f}, {normalized.max():.4f}]")
             return normalized.tolist()
+        else:
+            # Difference vector scores are already in [0, 1]
+            return scores_array.tolist()
+
+    def _normalize_scores_minmax(self, scores: np.ndarray) -> np.ndarray:
+        """Apply minmax normalization to map scores to [0, 1] range."""
+        s_min, s_max = np.min(scores), np.max(scores)
+        if s_max - s_min > 1e-8:
+            return (scores - s_min) / (s_max - s_min)
+        # All scores are the same - return 0.5
+        return np.ones_like(scores) * 0.5
 
     def _fallback_rerank(self, query: str, passages: List[str]) -> List[float]:
         """Fallback using Jaccard similarity."""
