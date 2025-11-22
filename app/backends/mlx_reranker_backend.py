@@ -474,62 +474,74 @@ class MLXCrossEncoderBackend(BaseBackend):
 
     def _compute_scores_with_lm_head(self, input_ids: "mx.array", attention_mask: "mx.array") -> Optional["mx.array"]:
         """
-        Compute scores using the difference vector classification approach.
+        Compute scores using the LM head's forward pass for yes/no logits.
 
-        Instead of extracting separate yes/no logits (which can be biased),
-        we use a single projection with the difference vector:
-            logit = hidden @ (yes_vector - no_vector)
-            score = sigmoid(logit)
+        For quantized models (like 4-bit MLX), we must call the lm_head layer directly
+        rather than extracting weights. The QuantizedLinear layer handles dequantization
+        internally via quantized_matmul.
 
-        This is mathematically equivalent to comparing yes/no probabilities
-        but more robust to quantization noise because:
-        1. It uses a single projection instead of comparing two separate logits
-        2. The difference vector directly captures the yes/no decision boundary
-        3. Sigmoid centers scores around 0.5 for neutral inputs
+        Process:
+        1. Run transformer forward pass to get hidden states
+        2. Extract last token's hidden state (with left padding)
+        3. Call lm_head(hidden_state) to get vocabulary logits
+        4. Extract yes/no logits and compute P(yes) as the score
 
         CRITICAL: With LEFT PADDING, the last real token is ALWAYS at position -1.
 
         Returns:
-            Scores array or None if classification vector not available
+            Scores array or None if scoring fails
         """
         try:
-            # Initialize classification vector if not already done
-            if not self._init_classification_vector():
-                logger.warning("Could not initialize classification vector, falling back")
+            # Check if model has lm_head
+            if not hasattr(self.model, 'lm_head'):
+                logger.warning("Model does not have lm_head attribute")
                 return None
 
-            # Get hidden states
+            # Get yes/no token IDs
+            yes_id, no_id = self._get_yes_no_token_ids()
+
+            # Get hidden states from transformer
             hidden_states = self._get_hidden_states(input_ids)
 
             # With LEFT PADDING, last token is always at position -1
             last_hidden = hidden_states[:, -1, :]  # [batch_size, hidden_size]
 
-            # Compute logits using difference vector projection
-            # logit = hidden @ cls_vector (dot product)
-            # This gives us: hidden @ (yes_vec - no_vec) = hidden @ yes_vec - hidden @ no_vec
-            # Which is equivalent to: yes_logit - no_logit
-            logits = mx.sum(last_hidden * self._cls_vector, axis=-1)  # [batch_size]
+            # Call lm_head directly - it handles dequantization for quantized models
+            # This outputs logits for the full vocabulary: [batch_size, vocab_size]
+            logits = self.model.lm_head(last_hidden)
+
+            # Extract yes/no logits
+            yes_logits = logits[:, yes_id]
+            no_logits = logits[:, no_id]
 
             # Log the raw logits for visibility
-            batch_size = int(logits.shape[0]) if hasattr(logits, 'shape') else 1
+            batch_size = int(yes_logits.shape[0]) if hasattr(yes_logits, 'shape') else 1
             for i in range(min(batch_size, 3)):  # Log first 3 samples
-                logit_val = float(logits[i].item()) if batch_size > 1 else float(logits.item())
-                logger.info(f"Sample {i}: diff_logit={logit_val:.4f} (positive=yes, negative=no)")
+                y_val = float(yes_logits[i].item()) if batch_size > 1 else float(yes_logits.item())
+                n_val = float(no_logits[i].item()) if batch_size > 1 else float(no_logits.item())
+                diff = y_val - n_val
+                logger.info(f"Sample {i}: yes_logit={y_val:.4f}, no_logit={n_val:.4f}, diff={diff:.4f}")
 
-            # Apply sigmoid to convert to probability
-            # sigmoid(yes_logit - no_logit) = P(yes) when yes/no are the only options
-            scores = mx.sigmoid(logits)
+            # Compute score as softmax probability of 'yes'
+            # score = exp(yes) / (exp(yes) + exp(no))
+            # Use numerically stable softmax
+            max_logit = mx.maximum(yes_logits, no_logits)
+            yes_exp = mx.exp(yes_logits - max_logit)
+            no_exp = mx.exp(no_logits - max_logit)
+            scores = yes_exp / (yes_exp + no_exp)
 
             # Log computed scores
-            logger.info(f"Difference vector scoring: batch_size={batch_size}")
+            logger.info(f"LM head yes/no scoring: yes_id={yes_id}, no_id={no_id}, batch_size={batch_size}")
             for i in range(min(batch_size, 3)):
                 score_val = float(scores[i].item()) if batch_size > 1 else float(scores.item())
-                logger.info(f"Sample {i}: score={score_val:.4f}")
+                logger.info(f"Sample {i}: P(yes)={score_val:.4f}")
 
             return scores
 
         except Exception as e:
-            logger.warning(f"Difference vector scoring failed: {e}, falling back to hidden state scoring")
+            logger.warning(f"LM head scoring failed: {e}, falling back to hidden state scoring")
+            import traceback
+            logger.warning(f"Traceback: {traceback.format_exc()}")
             return None
 
     def _compute_scores(self, pooled: "mx.array") -> "mx.array":
