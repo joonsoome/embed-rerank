@@ -83,10 +83,18 @@ class TEIEmbedRequest(BaseModel):
     truncate: Optional[bool] = Field(
         default=True, description="Whether to truncate inputs longer than the model's max length"
     )
+    is_query: Optional[bool] = Field(
+        default=False,
+        description=(
+            "Whether inputs are queries (True) or documents (False). "
+            "Queries get instruction prefix for asymmetric retrieval with Qwen3 models. "
+            "Default False for document indexing."
+        ),
+    )
 
     class Config:
         json_schema_extra = {
-            "example": {"inputs": ["Hello Apple MLX!", "Fast embeddings on Apple Silicon"], "truncate": True}
+            "example": {"inputs": ["Hello Apple MLX!", "Fast embeddings on Apple Silicon"], "truncate": True, "is_query": False}
         }
 
 
@@ -167,10 +175,14 @@ async def tei_embed(
         # 📝 Convert single string to list for consistent processing
         texts = [request.inputs] if isinstance(request.inputs, str) else request.inputs
 
+        # Get is_query setting (default False for document indexing)
+        is_query = request.is_query if request.is_query is not None else False
+
         logger.info(
             "🚀 TEI-compatible embedding request started",
             num_texts=len(texts),
             truncate=request.truncate,
+            is_query=is_query,
             client_ip=http_request.client.host if http_request and http_request.client else None,
         )
 
@@ -179,6 +191,7 @@ async def tei_embed(
             texts=texts,
             normalize=True,  # TEI embeddings are typically normalized
             batch_size=min(32, len(texts)),  # Optimal batch size for MLX
+            is_query=is_query,  # Pass through for asymmetric retrieval
         )
 
         # ⚡ Generate embeddings using Apple MLX magic!
