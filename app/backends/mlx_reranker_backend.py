@@ -234,32 +234,39 @@ class MLXCrossEncoderBackend(BaseBackend):
         """
         Pool hidden states for cross-encoder scoring.
 
+        CRITICAL: With LEFT PADDING, the last real token is ALWAYS at position -1.
+        This simplifies pooling significantly and ensures correct behavior.
+
         Args:
             hidden_states: [batch_size, seq_len, hidden_size]
-            attention_mask: Optional [batch_size, seq_len]
+            attention_mask: Optional [batch_size, seq_len] - not needed with left padding
 
         Returns:
             Pooled representation [batch_size, hidden_size]
         """
         if self._pooling == "last":
-            # Use last token (appropriate for causal LM)
-            # If we have attention mask, find the last real token
+            # With LEFT PADDING, the last real token is always at position -1
+            return hidden_states[:, -1, :]
+
+        elif self._pooling == "cls":
+            # Use first token (CLS-style) - note: with left padding this is the first pad token
+            # For CLS pooling with left padding, we need to find the first real token
             if attention_mask is not None:
-                # Sum attention mask to get sequence lengths
-                seq_lengths = mx.sum(attention_mask, axis=1).astype(mx.int32) - 1
-                # Gather last token for each sequence
+                # Find first 1 in attention mask for each sequence
                 batch_size = hidden_states.shape[0]
                 pooled = []
                 for i in range(batch_size):
-                    idx = int(seq_lengths[i].item())
-                    pooled.append(hidden_states[i, idx, :])
+                    # Find first non-zero position
+                    mask_row = attention_mask[i]
+                    first_idx = 0
+                    for j in range(mask_row.shape[0]):
+                        if int(mask_row[j].item()) == 1:
+                            first_idx = j
+                            break
+                    pooled.append(hidden_states[i, first_idx, :])
                 return mx.stack(pooled)
             else:
-                return hidden_states[:, -1, :]
-
-        elif self._pooling == "cls":
-            # Use first token (CLS-style)
-            return hidden_states[:, 0, :]
+                return hidden_states[:, 0, :]
 
         else:  # mean pooling
             if attention_mask is not None:
@@ -298,9 +305,12 @@ class MLXCrossEncoderBackend(BaseBackend):
 
     def _compute_scores_with_lm_head(self, input_ids: "mx.array", attention_mask: "mx.array") -> Optional["mx.array"]:
         """
-        Try to compute scores using the LM head for yes/no logits.
+        Compute scores using the LM head for yes/no logits.
 
         Qwen3-Reranker outputs yes/no and we score based on P(yes) vs P(no).
+
+        CRITICAL: With LEFT PADDING, the last real token is ALWAYS at position -1.
+        This simplifies extraction significantly.
 
         Returns:
             Scores array or None if LM head not accessible
@@ -313,16 +323,8 @@ class MLXCrossEncoderBackend(BaseBackend):
             # Get hidden states
             hidden_states = self._get_hidden_states(input_ids)
 
-            # Get last token position for each sequence
-            seq_lengths = mx.sum(attention_mask, axis=1).astype(mx.int32) - 1
-            batch_size = hidden_states.shape[0]
-
-            # Extract last token hidden states
-            last_hidden = []
-            for i in range(batch_size):
-                idx = max(0, int(seq_lengths[i].item()))
-                last_hidden.append(hidden_states[i, idx, :])
-            last_hidden = mx.stack(last_hidden)
+            # With LEFT PADDING, last token is always at position -1
+            last_hidden = hidden_states[:, -1, :]
 
             # Apply LM head to get logits
             logits = self.model.lm_head(last_hidden)  # [batch_size, vocab_size]
@@ -386,6 +388,10 @@ class MLXCrossEncoderBackend(BaseBackend):
         """
         Tokenize texts handling both HuggingFace tokenizers and mlx-lm TokenizerWrapper.
 
+        CRITICAL: Uses LEFT PADDING for proper last-token pooling.
+        With left padding, the last real token is always at position -1,
+        which is essential for extracting the final token's logits.
+
         The mlx-lm TokenizerWrapper doesn't implement __call__, so we need to either:
         1. Access the underlying HF tokenizer via _tokenizer attribute
         2. Fall back to manual tokenization using encode()
@@ -394,6 +400,15 @@ class MLXCrossEncoderBackend(BaseBackend):
         if hasattr(self.tokenizer, '_tokenizer'):
             try:
                 hf_tokenizer = self.tokenizer._tokenizer
+
+                # CRITICAL: Set left padding for last-token extraction
+                original_padding_side = getattr(hf_tokenizer, 'padding_side', 'right')
+                hf_tokenizer.padding_side = 'left'
+
+                # Ensure pad token is set
+                if hf_tokenizer.pad_token is None:
+                    hf_tokenizer.pad_token = hf_tokenizer.eos_token
+
                 encodings = hf_tokenizer(
                     texts,
                     padding=True,
@@ -401,6 +416,10 @@ class MLXCrossEncoderBackend(BaseBackend):
                     max_length=max_length,
                     return_tensors='np',
                 )
+
+                # Restore original padding side
+                hf_tokenizer.padding_side = original_padding_side
+
                 return {
                     'input_ids': encodings['input_ids'],
                     'attention_mask': encodings['attention_mask'],
@@ -411,6 +430,10 @@ class MLXCrossEncoderBackend(BaseBackend):
         # Strategy 2: Try direct __call__ (for native HF tokenizers)
         if callable(self.tokenizer):
             try:
+                # Try to set left padding
+                original_padding_side = getattr(self.tokenizer, 'padding_side', 'right')
+                self.tokenizer.padding_side = 'left'
+
                 encodings = self.tokenizer(
                     texts,
                     padding=True,
@@ -418,15 +441,18 @@ class MLXCrossEncoderBackend(BaseBackend):
                     max_length=max_length,
                     return_tensors='np',
                 )
+
+                self.tokenizer.padding_side = original_padding_side
+
                 return {
                     'input_ids': encodings['input_ids'],
                     'attention_mask': encodings.get('attention_mask', np.ones_like(encodings['input_ids'])),
                 }
-            except TypeError:
+            except (TypeError, AttributeError):
                 pass
 
-        # Strategy 3: Manual tokenization using encode() method
-        logger.info("Using manual tokenization with encode() method")
+        # Strategy 3: Manual tokenization using encode() method with LEFT PADDING
+        logger.info("Using manual tokenization with encode() method (left padding)")
         all_ids = []
         for text in texts:
             ids = self.tokenizer.encode(text)
@@ -443,8 +469,9 @@ class MLXCrossEncoderBackend(BaseBackend):
 
         for ids in all_ids:
             pad_len = max_len - len(ids)
-            padded_ids.append(ids + [pad_token_id] * pad_len)
-            attention_masks.append([1] * len(ids) + [0] * pad_len)
+            # LEFT PADDING: padding goes at the beginning
+            padded_ids.append([pad_token_id] * pad_len + ids)
+            attention_masks.append([0] * pad_len + [1] * len(ids))
 
         return {
             'input_ids': np.array(padded_ids, dtype=np.int64),
@@ -487,31 +514,57 @@ class MLXCrossEncoderBackend(BaseBackend):
             # Fallback to simple similarity
             return self._fallback_rerank(query, passages)
 
+    def _format_rerank_input(self, query: str, document: str) -> str:
+        """
+        Format query-document pair using Qwen3-Reranker chat template.
+
+        Qwen3-Reranker requires the proper chat template format with special tokens:
+        <|im_start|>system
+        {system_message}<|im_end|>
+        <|im_start|>user
+        <Query>: {query}
+        <Document>: {document}<|im_end|>
+        <|im_start|>assistant
+
+        The model then outputs 'yes' or 'no' and we score based on token probabilities.
+        """
+        system_message = "Judge whether the Document is relevant to the Query. Answer only \"yes\" or \"no\"."
+
+        formatted = (
+            f"<|im_start|>system\n"
+            f"{system_message}<|im_end|>\n"
+            f"<|im_start|>user\n"
+            f"<Query>: {query}\n"
+            f"<Document>: {document}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+        return formatted
+
     def _rerank_sync(self, query: str, passages: List[str]) -> List[float]:
         """
         Synchronous cross-encoder reranking with full transformer forward pass.
 
-        Uses Qwen3-Reranker format:
-        <Instruct>: {instruction}
+        Uses Qwen3-Reranker chat template format:
+        <|im_start|>system
+        Judge whether the Document is relevant to the Query. Answer only "yes" or "no".<|im_end|>
+        <|im_start|>user
         <Query>: {query}
-        <Document>: {document}
+        <Document>: {document}<|im_end|>
+        <|im_start|>assistant
 
         Tries LM head yes/no scoring first, falls back to hidden state scoring.
         """
         all_scores = []
 
-        # Qwen3-Reranker instruction
-        instruction = "Given a web search query and a document, determine if the document is relevant to the query. Answer only 'yes' or 'no'."
-
         # Process in batches
         for i in range(0, len(passages), self._batch_size):
             batch_passages = passages[i:i + self._batch_size]
 
-            # Format inputs using Qwen3-Reranker format
+            # Format inputs using Qwen3-Reranker chat template
             pairs = []
             for passage in batch_passages:
-                # Qwen3-Reranker format
-                pair_text = f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {passage}"
+                # Use proper chat template format
+                pair_text = self._format_rerank_input(query, passage)
                 pairs.append(pair_text)
 
             # Tokenize all pairs using our compatible tokenization method

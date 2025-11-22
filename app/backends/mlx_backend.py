@@ -249,32 +249,20 @@ class MLXBackend(BaseBackend):
         Qwen3-Embedding uses last token pooling (the EOS token position) rather than
         mean pooling. This is standard for causal LM-based embedding models.
 
+        CRITICAL: With LEFT PADDING, the last real token is ALWAYS at position -1.
+        This simplifies pooling significantly and ensures correct behavior.
+
         Args:
             hidden_states: [batch_size, seq_len, hidden_size]
-            attention_mask: [batch_size, seq_len] - required to find last real token
+            attention_mask: [batch_size, seq_len] - used for verification but with
+                           left padding, last token is always at -1
 
         Returns:
             Pooled embeddings [batch_size, hidden_size]
         """
-        if attention_mask is not None:
-            # Find the position of the last real token (before padding)
-            # Sum attention mask to get sequence lengths, subtract 1 for 0-indexing
-            seq_lengths = mx.sum(attention_mask, axis=1).astype(mx.int32) - 1
-
-            # Extract the hidden state at the last token position for each sequence
-            batch_size = hidden_states.shape[0]
-            pooled_list = []
-            for i in range(batch_size):
-                # Get the index of the last real token
-                last_idx = int(seq_lengths[i].item())
-                # Ensure we don't go negative
-                last_idx = max(0, last_idx)
-                pooled_list.append(hidden_states[i, last_idx, :])
-
-            pooled = mx.stack(pooled_list)
-        else:
-            # If no attention mask, assume no padding - use actual last token
-            pooled = hidden_states[:, -1, :]
+        # With LEFT PADDING, the last real token is always at the end of the sequence
+        # This is why left padding is critical for last-token pooling models
+        pooled = hidden_states[:, -1, :]
 
         return pooled
 
@@ -283,9 +271,39 @@ class MLXBackend(BaseBackend):
         norm = mx.linalg.norm(embeddings, axis=-1, keepdims=True)
         return embeddings / mx.maximum(norm, 1e-9)
 
+    def _format_for_embedding(self, texts: List[str], is_query: bool = True) -> List[str]:
+        """
+        Format texts with Qwen3-Embedding instruction prefix.
+
+        Qwen3-Embedding requires specific instruction formatting:
+        - Queries: "Instruct: {task}\\nQuery: {text}"
+        - Documents: Can be plain text or with instruction prefix
+
+        Args:
+            texts: List of texts to format
+            is_query: If True, format as queries; if False, format as documents
+
+        Returns:
+            Formatted texts with instruction prefix
+        """
+        if is_query:
+            # Query instruction for retrieval tasks
+            instruction = "Given a web search query, retrieve relevant passages that answer the query"
+            formatted = [f"Instruct: {instruction}\nQuery: {text}" for text in texts]
+        else:
+            # Documents can be plain text for asymmetric retrieval
+            # or formatted for symmetric tasks
+            formatted = texts
+
+        return formatted
+
     def _tokenize_texts(self, texts: List[str], max_length: int = 512) -> Dict[str, np.ndarray]:
         """
         Tokenize texts handling both HuggingFace tokenizers and mlx-lm TokenizerWrapper.
+
+        CRITICAL: Uses LEFT PADDING for proper last-token pooling.
+        With left padding, the last real token is always at position -1,
+        which is essential for Qwen3-Embedding's last-token pooling strategy.
 
         The mlx-lm TokenizerWrapper doesn't implement __call__, so we need to either:
         1. Access the underlying HF tokenizer via _tokenizer attribute
@@ -302,6 +320,15 @@ class MLXBackend(BaseBackend):
         if hasattr(self.tokenizer, '_tokenizer'):
             try:
                 hf_tokenizer = self.tokenizer._tokenizer
+
+                # CRITICAL: Set left padding for last-token pooling
+                original_padding_side = getattr(hf_tokenizer, 'padding_side', 'right')
+                hf_tokenizer.padding_side = 'left'
+
+                # Ensure pad token is set
+                if hf_tokenizer.pad_token is None:
+                    hf_tokenizer.pad_token = hf_tokenizer.eos_token
+
                 encodings = hf_tokenizer(
                     texts,
                     padding=True,
@@ -309,6 +336,10 @@ class MLXBackend(BaseBackend):
                     max_length=max_length,
                     return_tensors='np',
                 )
+
+                # Restore original padding side
+                hf_tokenizer.padding_side = original_padding_side
+
                 return {
                     'input_ids': encodings['input_ids'],
                     'attention_mask': encodings['attention_mask'],
@@ -319,6 +350,10 @@ class MLXBackend(BaseBackend):
         # Strategy 2: Try direct __call__ (for native HF tokenizers)
         if callable(self.tokenizer):
             try:
+                # Try to set left padding
+                original_padding_side = getattr(self.tokenizer, 'padding_side', 'right')
+                self.tokenizer.padding_side = 'left'
+
                 encodings = self.tokenizer(
                     texts,
                     padding=True,
@@ -326,15 +361,18 @@ class MLXBackend(BaseBackend):
                     max_length=max_length,
                     return_tensors='np',
                 )
+
+                self.tokenizer.padding_side = original_padding_side
+
                 return {
                     'input_ids': encodings['input_ids'],
                     'attention_mask': encodings.get('attention_mask', np.ones_like(encodings['input_ids'])),
                 }
-            except TypeError:
-                pass  # Not callable, try next strategy
+            except (TypeError, AttributeError):
+                pass  # Not callable or can't set padding, try next strategy
 
-        # Strategy 3: Manual tokenization using encode() method
-        logger.info("Using manual tokenization with encode() method")
+        # Strategy 3: Manual tokenization using encode() method with LEFT PADDING
+        logger.info("Using manual tokenization with encode() method (left padding)")
         all_ids = []
         for text in texts:
             # mlx-lm tokenizer.encode() returns list of ints
@@ -343,7 +381,7 @@ class MLXBackend(BaseBackend):
             ids = ids[:max_length]
             all_ids.append(ids)
 
-        # Pad to max length in batch
+        # Pad to max length in batch - LEFT PADDING
         max_len = max(len(ids) for ids in all_ids) if all_ids else 1
         padded_ids = []
         attention_masks = []
@@ -355,21 +393,23 @@ class MLXBackend(BaseBackend):
 
         for ids in all_ids:
             pad_len = max_len - len(ids)
-            padded_ids.append(ids + [pad_token_id] * pad_len)
-            attention_masks.append([1] * len(ids) + [0] * pad_len)
+            # LEFT PADDING: padding goes at the beginning
+            padded_ids.append([pad_token_id] * pad_len + ids)
+            attention_masks.append([0] * pad_len + [1] * len(ids))
 
         return {
             'input_ids': np.array(padded_ids, dtype=np.int64),
             'attention_mask': np.array(attention_masks, dtype=np.int64),
         }
 
-    async def embed_texts(self, texts: List[str], batch_size: int = 32) -> EmbeddingResult:
+    async def embed_texts(self, texts: List[str], batch_size: int = 32, is_query: bool = True) -> EmbeddingResult:
         """
         Generate embeddings using full transformer forward pass.
 
         Args:
             texts: List of texts to embed
             batch_size: Batch size for processing
+            is_query: If True, format texts with query instruction prefix (default True)
 
         Returns:
             EmbeddingResult with semantically meaningful vectors
@@ -384,11 +424,14 @@ class MLXBackend(BaseBackend):
             "Generating embeddings with full transformer forward pass",
             num_texts=len(texts),
             batch_size=batch_size,
+            is_query=is_query,
         )
 
         try:
             loop = asyncio.get_event_loop()
-            vectors = await loop.run_in_executor(self._executor, self._embed_sync, texts, batch_size)
+            vectors = await loop.run_in_executor(
+                self._executor, lambda: self._embed_sync(texts, batch_size, is_query)
+            )
 
             processing_time = time.time() - start_time
 
@@ -410,12 +453,17 @@ class MLXBackend(BaseBackend):
             logger.error("Embedding generation failed", num_texts=len(texts), error=str(e))
             raise RuntimeError(f"MLX embedding failed: {e}")
 
-    def _embed_sync(self, texts: List[str], batch_size: int) -> np.ndarray:
+    def _embed_sync(self, texts: List[str], batch_size: int, is_query: bool = True) -> np.ndarray:
         """
         Synchronous embedding generation with full transformer forward pass.
 
         This is the corrected implementation that runs through all transformer
         layers instead of just doing an embedding table lookup.
+
+        Args:
+            texts: List of texts to embed
+            batch_size: Batch size for processing
+            is_query: If True, format texts with query instruction prefix
         """
         if not self.model or not self.tokenizer:
             raise RuntimeError("Model or tokenizer not loaded")
@@ -425,8 +473,11 @@ class MLXBackend(BaseBackend):
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i + batch_size]
 
-            # Tokenize batch using our compatible tokenization method
-            encodings = self._tokenize_texts(batch_texts, max_length=512)
+            # Apply Qwen3-Embedding instruction formatting
+            formatted_texts = self._format_for_embedding(batch_texts, is_query=is_query)
+
+            # Tokenize batch using our compatible tokenization method (with left padding)
+            encodings = self._tokenize_texts(formatted_texts, max_length=512)
 
             input_ids = _mx_array(encodings['input_ids'])
             attention_mask = _mx_array(encodings['attention_mask'])
@@ -524,13 +575,18 @@ class MLXBackend(BaseBackend):
 
         Note: For true cross-encoder reranking, use MLXCrossEncoderBackend.
         This method uses bi-encoder similarity which is faster but less accurate.
+
+        Uses asymmetric embedding:
+        - Query: formatted with instruction prefix
+        - Passages: plain text (no instruction prefix)
         """
         start_time = time.time()
         logger.info(f"Reranking {len(passages)} passages with embedding similarity")
 
         try:
-            query_result = await self.embed_texts([query])
-            passages_result = await self.embed_texts(passages)
+            # Query gets instruction prefix, passages don't (asymmetric)
+            query_result = await self.embed_texts([query], is_query=True)
+            passages_result = await self.embed_texts(passages, is_query=False)
 
             query_vector = query_result.vectors[0]
             passage_vectors = passages_result.vectors
