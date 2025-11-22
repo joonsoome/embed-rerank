@@ -393,12 +393,12 @@ class MLXCrossEncoderBackend(BaseBackend):
             yes_logits = logits[:, yes_id]
             no_logits = logits[:, no_id]
 
-            # Log the raw logits for debugging
+            # Log the raw logits for visibility (INFO level)
             batch_size = int(yes_logits.shape[0]) if hasattr(yes_logits, 'shape') else 1
             for i in range(min(batch_size, 3)):  # Log first 3 samples
                 y_val = float(yes_logits[i].item()) if batch_size > 1 else float(yes_logits.item())
                 n_val = float(no_logits[i].item()) if batch_size > 1 else float(no_logits.item())
-                logger.debug(f"Sample {i}: yes_logit={y_val:.4f}, no_logit={n_val:.4f}, diff={y_val - n_val:.4f}")
+                logger.info(f"Sample {i}: yes_logit={y_val:.4f}, no_logit={n_val:.4f}, diff={y_val - n_val:.4f}")
 
             # Compute score as softmax probability of 'yes'
             # score = exp(yes) / (exp(yes) + exp(no))
@@ -585,25 +585,24 @@ class MLXCrossEncoderBackend(BaseBackend):
         """
         Format query-document pair using Qwen3-Reranker chat template.
 
-        Qwen3-Reranker requires the proper chat template format with special tokens:
-        <|im_start|>system
-        {system_message}<|im_end|>
-        <|im_start|>user
-        <Query>: {query}
-        <Document>: {document}<|im_end|>
-        <|im_start|>assistant
+        Qwen3-Reranker requires the EXACT prompt format with:
+        - System message with specific wording
+        - User section with <Instruct>, <Query>, <Document> tags
+        - Assistant section with <think></think> tokens for reasoning
 
-        The model then outputs 'yes' or 'no' and we score based on token probabilities.
+        Reference: https://huggingface.co/Qwen/Qwen3-Reranker-0.6B
         """
-        system_message = "Judge whether the Document is relevant to the Query. Answer only \"yes\" or \"no\"."
-
+        # Use the exact format from Qwen3-Reranker documentation
         formatted = (
             f"<|im_start|>system\n"
-            f"{system_message}<|im_end|>\n"
+            f"Judge whether the Document meets the requirements based on the Query and the Instruct provided. "
+            f"Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n"
             f"<|im_start|>user\n"
+            f"<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n"
             f"<Query>: {query}\n"
             f"<Document>: {document}<|im_end|>\n"
             f"<|im_start|>assistant\n"
+            f"<think>\n\n</think>\n"
         )
         return formatted
 
