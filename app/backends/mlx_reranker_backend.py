@@ -279,29 +279,85 @@ class MLXCrossEncoderBackend(BaseBackend):
                 return mx.mean(hidden_states, axis=1)
 
     def _get_yes_no_token_ids(self) -> Tuple[int, int]:
-        """Get token IDs for 'yes' and 'no' tokens."""
-        try:
-            # Try to get from underlying HF tokenizer
-            if hasattr(self.tokenizer, '_tokenizer'):
-                hf_tok = self.tokenizer._tokenizer
-                yes_id = hf_tok.convert_tokens_to_ids("yes")
-                no_id = hf_tok.convert_tokens_to_ids("no")
-                if yes_id != hf_tok.unk_token_id and no_id != hf_tok.unk_token_id:
-                    return yes_id, no_id
-        except Exception:
-            pass
+        """
+        Get token IDs for 'yes' and 'no' tokens.
 
-        # Fallback: encode and take first token
+        Tries multiple variations to handle different tokenizer behaviors:
+        - "yes" / "no" (lowercase)
+        - "Yes" / "No" (capitalized)
+        - " yes" / " no" (with leading space, common in sentence-piece)
+        """
+        yes_id = None
+        no_id = None
+
+        # Variations to try (in order of preference for Qwen models)
+        yes_variants = ["yes", "Yes", " yes", " Yes", "YES"]
+        no_variants = ["no", "No", " no", " No", "NO"]
+
+        # Strategy 1: Try HF tokenizer convert_tokens_to_ids
+        if hasattr(self.tokenizer, '_tokenizer'):
+            try:
+                hf_tok = self.tokenizer._tokenizer
+                unk_id = hf_tok.unk_token_id
+
+                # Try yes variants
+                for variant in yes_variants:
+                    try:
+                        tid = hf_tok.convert_tokens_to_ids(variant)
+                        if tid != unk_id:
+                            yes_id = tid
+                            logger.info(f"Found 'yes' token: '{variant}' -> {yes_id}")
+                            break
+                    except Exception:
+                        continue
+
+                # Try no variants
+                for variant in no_variants:
+                    try:
+                        tid = hf_tok.convert_tokens_to_ids(variant)
+                        if tid != unk_id:
+                            no_id = tid
+                            logger.info(f"Found 'no' token: '{variant}' -> {no_id}")
+                            break
+                    except Exception:
+                        continue
+
+                if yes_id is not None and no_id is not None:
+                    return yes_id, no_id
+            except Exception as e:
+                logger.warning(f"HF tokenizer token lookup failed: {e}")
+
+        # Strategy 2: Encode and find the content token (skip BOS/special tokens)
         try:
-            yes_ids = self.tokenizer.encode("yes")
-            no_ids = self.tokenizer.encode("no")
-            # Skip BOS token if present (usually first token)
-            yes_id = yes_ids[1] if len(yes_ids) > 1 else yes_ids[0]
-            no_id = no_ids[1] if len(no_ids) > 1 else no_ids[0]
-            return yes_id, no_id
-        except Exception:
-            # Ultimate fallback - common token IDs for yes/no in Qwen models
-            return 9891, 2201  # Approximate values
+            for yes_variant in yes_variants:
+                yes_ids = self.tokenizer.encode(yes_variant)
+                # Skip BOS token if present (usually ID < 10 or first token)
+                for tid in yes_ids:
+                    if tid > 10:  # Skip special tokens
+                        yes_id = tid
+                        logger.info(f"Encoded 'yes' variant '{yes_variant}': {yes_ids} -> using {yes_id}")
+                        break
+                if yes_id is not None:
+                    break
+
+            for no_variant in no_variants:
+                no_ids = self.tokenizer.encode(no_variant)
+                for tid in no_ids:
+                    if tid > 10:
+                        no_id = tid
+                        logger.info(f"Encoded 'no' variant '{no_variant}': {no_ids} -> using {no_id}")
+                        break
+                if no_id is not None:
+                    break
+
+            if yes_id is not None and no_id is not None:
+                return yes_id, no_id
+        except Exception as e:
+            logger.warning(f"Token encoding failed: {e}")
+
+        # Ultimate fallback - log warning and use approximate values
+        logger.warning(f"Could not find yes/no tokens, using fallback IDs. yes_id={yes_id}, no_id={no_id}")
+        return yes_id or 9891, no_id or 2201
 
     def _compute_scores_with_lm_head(self, input_ids: "mx.array", attention_mask: "mx.array") -> Optional["mx.array"]:
         """
@@ -318,6 +374,7 @@ class MLXCrossEncoderBackend(BaseBackend):
         try:
             # Check if model has lm_head
             if not hasattr(self.model, 'lm_head'):
+                logger.warning("Model does not have lm_head attribute")
                 return None
 
             # Get hidden states
@@ -336,12 +393,22 @@ class MLXCrossEncoderBackend(BaseBackend):
             yes_logits = logits[:, yes_id]
             no_logits = logits[:, no_id]
 
+            # Log the raw logits for debugging
+            batch_size = int(yes_logits.shape[0]) if hasattr(yes_logits, 'shape') else 1
+            for i in range(min(batch_size, 3)):  # Log first 3 samples
+                y_val = float(yes_logits[i].item()) if batch_size > 1 else float(yes_logits.item())
+                n_val = float(no_logits[i].item()) if batch_size > 1 else float(no_logits.item())
+                logger.debug(f"Sample {i}: yes_logit={y_val:.4f}, no_logit={n_val:.4f}, diff={y_val - n_val:.4f}")
+
             # Compute score as softmax probability of 'yes'
             # score = exp(yes) / (exp(yes) + exp(no))
             max_logit = mx.maximum(yes_logits, no_logits)
             yes_exp = mx.exp(yes_logits - max_logit)
             no_exp = mx.exp(no_logits - max_logit)
             scores = yes_exp / (yes_exp + no_exp)
+
+            # Log computed scores
+            logger.info(f"LM head yes/no scoring: yes_id={yes_id}, no_id={no_id}, batch_size={batch_size}")
 
             return scores
 
