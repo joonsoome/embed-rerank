@@ -522,21 +522,20 @@ class MLXCrossEncoderBackend(BaseBackend):
                 diff = y_val - n_val
                 logger.info(f"Sample {i}: yes_logit={y_val:.4f}, no_logit={n_val:.4f}, diff={diff:.4f}")
 
-            # Compute score as softmax probability of 'yes'
-            # score = exp(yes) / (exp(yes) + exp(no))
-            # Use numerically stable softmax
-            max_logit = mx.maximum(yes_logits, no_logits)
-            yes_exp = mx.exp(yes_logits - max_logit)
-            no_exp = mx.exp(no_logits - max_logit)
-            scores = yes_exp / (yes_exp + no_exp)
+            # Return raw diff values: yes_logit - no_logit
+            # Positive = model leans "yes", negative = model leans "no"
+            # The diff values show better semantic signal than P(yes) which clusters at 0.7-0.99
+            # MinMax normalization will be applied in _rerank_sync to spread scores to [0, 1]
+            diffs = yes_logits - no_logits
 
-            # Log computed scores
-            logger.info(f"LM head yes/no scoring: yes_id={yes_id}, no_id={no_id}, batch_size={batch_size}")
+            # Log diff values
+            logger.info(f"LM head diff-based scoring: yes_id={yes_id}, no_id={no_id}, batch_size={batch_size}")
             for i in range(min(batch_size, 3)):
-                score_val = float(scores[i].item()) if batch_size > 1 else float(scores.item())
-                logger.info(f"Sample {i}: P(yes)={score_val:.4f}")
+                diff_val = float(diffs[i].item()) if batch_size > 1 else float(diffs.item())
+                logger.info(f"Sample {i}: diff={diff_val:.4f}")
 
-            return scores
+            # Return raw diffs - they will be normalized in _rerank_sync
+            return diffs
 
         except Exception as e:
             logger.warning(f"LM head scoring failed: {e}, falling back to hidden state scoring")
@@ -721,6 +720,7 @@ class MLXCrossEncoderBackend(BaseBackend):
         Reference: https://huggingface.co/Qwen/Qwen3-Reranker-0.6B
         """
         # Use the exact format from Qwen3-Reranker documentation
+        # CRITICAL: Double newline after </think> per vLLM issue #21681
         formatted = (
             f"<|im_start|>system\n"
             f"Judge whether the Document meets the requirements based on the Query and the Instruct provided. "
@@ -730,7 +730,7 @@ class MLXCrossEncoderBackend(BaseBackend):
             f"<Query>: {query}\n"
             f"<Document>: {document}<|im_end|>\n"
             f"<|im_start|>assistant\n"
-            f"<think>\n\n</think>\n"
+            f"<think>\n\n</think>\n\n"
         )
         return formatted
 
@@ -772,7 +772,7 @@ class MLXCrossEncoderBackend(BaseBackend):
             batch_scores_mx = self._compute_scores_with_lm_head(input_ids, attention_mask)
 
             if batch_scores_mx is not None:
-                # Difference vector scoring succeeded - scores are already in [0, 1]
+                # LM head scoring succeeded - returns raw diff values (yes_logit - no_logit)
                 mx.eval(batch_scores_mx)
                 batch_scores = np.array(batch_scores_mx.tolist(), dtype=np.float32)
                 all_scores.extend(batch_scores.tolist())
@@ -788,17 +788,17 @@ class MLXCrossEncoderBackend(BaseBackend):
 
         scores_array = np.array(all_scores)
 
-        # Always normalize fallback scores for proper 0-1 range
+        # Always apply minmax normalization to spread scores to [0, 1] range
+        # Both lm_head diff values and fallback hidden state scores benefit from this
+        logger.info(f"Raw score range: [{scores_array.min():.6f}, {scores_array.max():.6f}]")
         if used_fallback:
-            logger.info(f"Using hidden state fallback scoring, applying minmax normalization")
-            logger.info(f"Raw score range: [{scores_array.min():.6f}, {scores_array.max():.6f}]")
-            # Use minmax for fallback - gives better spread than sigmoid for small values
-            normalized = self._normalize_scores_minmax(scores_array)
-            logger.info(f"Normalized score range: [{normalized.min():.4f}, {normalized.max():.4f}]")
-            return normalized.tolist()
-        else:
-            # Difference vector scores are already in [0, 1]
-            return scores_array.tolist()
+            logger.info(f"Using hidden state fallback scoring")
+
+        # Apply minmax normalization to all scores
+        # Both lm_head diff values and fallback scores benefit from this
+        normalized = self._normalize_scores_minmax(scores_array)
+        logger.info(f"Normalized score range: [{normalized.min():.4f}, {normalized.max():.4f}]")
+        return normalized.tolist()
 
     def _normalize_scores_minmax(self, scores: np.ndarray) -> np.ndarray:
         """Apply minmax normalization to map scores to [0, 1] range."""
