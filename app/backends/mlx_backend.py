@@ -244,30 +244,37 @@ class MLXBackend(BaseBackend):
 
     def _pool_embeddings(self, hidden_states: "mx.array", attention_mask: Optional["mx.array"] = None) -> "mx.array":
         """
-        Pool hidden states to get sentence-level embeddings.
+        Pool hidden states to get sentence-level embeddings using LAST TOKEN pooling.
 
-        Uses mean pooling across the sequence dimension, optionally
-        respecting the attention mask to ignore padding tokens.
+        Qwen3-Embedding uses last token pooling (the EOS token position) rather than
+        mean pooling. This is standard for causal LM-based embedding models.
 
         Args:
             hidden_states: [batch_size, seq_len, hidden_size]
-            attention_mask: Optional [batch_size, seq_len]
+            attention_mask: [batch_size, seq_len] - required to find last real token
 
         Returns:
             Pooled embeddings [batch_size, hidden_size]
         """
         if attention_mask is not None:
-            # Expand mask for broadcasting: [batch_size, seq_len, 1]
-            mask_expanded = mx.expand_dims(attention_mask, axis=-1)
-            # Zero out padding positions
-            masked_hidden = hidden_states * mask_expanded
-            # Sum and divide by actual sequence length
-            sum_hidden = mx.sum(masked_hidden, axis=1)
-            sum_mask = mx.sum(mask_expanded, axis=1)
-            pooled = sum_hidden / mx.maximum(sum_mask, 1e-9)
+            # Find the position of the last real token (before padding)
+            # Sum attention mask to get sequence lengths, subtract 1 for 0-indexing
+            seq_lengths = mx.sum(attention_mask, axis=1).astype(mx.int32) - 1
+
+            # Extract the hidden state at the last token position for each sequence
+            batch_size = hidden_states.shape[0]
+            pooled_list = []
+            for i in range(batch_size):
+                # Get the index of the last real token
+                last_idx = int(seq_lengths[i].item())
+                # Ensure we don't go negative
+                last_idx = max(0, last_idx)
+                pooled_list.append(hidden_states[i, last_idx, :])
+
+            pooled = mx.stack(pooled_list)
         else:
-            # Simple mean pooling across sequence dimension
-            pooled = mx.mean(hidden_states, axis=1)
+            # If no attention mask, assume no padding - use actual last token
+            pooled = hidden_states[:, -1, :]
 
         return pooled
 

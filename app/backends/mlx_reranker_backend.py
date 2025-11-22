@@ -82,8 +82,8 @@ class MLXCrossEncoderBackend(BaseBackend):
         device: Optional[str] = None,
         batch_size: int = 16,
         max_length: int = 512,
-        pooling: str = "mean",
-        score_norm: str = "sigmoid",
+        pooling: str = "last",  # Changed default: Qwen3 uses last token
+        score_norm: str = "sigmoid",  # Ensure sigmoid is applied
     ):
         """
         Initialize the MLX Cross-Encoder Backend.
@@ -93,8 +93,8 @@ class MLXCrossEncoderBackend(BaseBackend):
             device: Device to use (always "mlx" for this backend)
             batch_size: Batch size for processing query-passage pairs
             max_length: Maximum sequence length for concatenated query+passage
-            pooling: Pooling strategy - "mean" or "last" (last token for causal LM)
-            score_norm: Score normalization - "sigmoid", "none", or "minmax"
+            pooling: Pooling strategy - "last" (default for causal LM), "mean", or "cls"
+            score_norm: Score normalization - "sigmoid" (default), "minmax", or "none"
         """
         if not MLX_AVAILABLE:
             raise RuntimeError(
@@ -271,12 +271,88 @@ class MLXCrossEncoderBackend(BaseBackend):
             else:
                 return mx.mean(hidden_states, axis=1)
 
+    def _get_yes_no_token_ids(self) -> Tuple[int, int]:
+        """Get token IDs for 'yes' and 'no' tokens."""
+        try:
+            # Try to get from underlying HF tokenizer
+            if hasattr(self.tokenizer, '_tokenizer'):
+                hf_tok = self.tokenizer._tokenizer
+                yes_id = hf_tok.convert_tokens_to_ids("yes")
+                no_id = hf_tok.convert_tokens_to_ids("no")
+                if yes_id != hf_tok.unk_token_id and no_id != hf_tok.unk_token_id:
+                    return yes_id, no_id
+        except Exception:
+            pass
+
+        # Fallback: encode and take first token
+        try:
+            yes_ids = self.tokenizer.encode("yes")
+            no_ids = self.tokenizer.encode("no")
+            # Skip BOS token if present (usually first token)
+            yes_id = yes_ids[1] if len(yes_ids) > 1 else yes_ids[0]
+            no_id = no_ids[1] if len(no_ids) > 1 else no_ids[0]
+            return yes_id, no_id
+        except Exception:
+            # Ultimate fallback - common token IDs for yes/no in Qwen models
+            return 9891, 2201  # Approximate values
+
+    def _compute_scores_with_lm_head(self, input_ids: "mx.array", attention_mask: "mx.array") -> Optional["mx.array"]:
+        """
+        Try to compute scores using the LM head for yes/no logits.
+
+        Qwen3-Reranker outputs yes/no and we score based on P(yes) vs P(no).
+
+        Returns:
+            Scores array or None if LM head not accessible
+        """
+        try:
+            # Check if model has lm_head
+            if not hasattr(self.model, 'lm_head'):
+                return None
+
+            # Get hidden states
+            hidden_states = self._get_hidden_states(input_ids)
+
+            # Get last token position for each sequence
+            seq_lengths = mx.sum(attention_mask, axis=1).astype(mx.int32) - 1
+            batch_size = hidden_states.shape[0]
+
+            # Extract last token hidden states
+            last_hidden = []
+            for i in range(batch_size):
+                idx = max(0, int(seq_lengths[i].item()))
+                last_hidden.append(hidden_states[i, idx, :])
+            last_hidden = mx.stack(last_hidden)
+
+            # Apply LM head to get logits
+            logits = self.model.lm_head(last_hidden)  # [batch_size, vocab_size]
+
+            # Get yes/no token IDs
+            yes_id, no_id = self._get_yes_no_token_ids()
+
+            # Extract yes/no logits
+            yes_logits = logits[:, yes_id]
+            no_logits = logits[:, no_id]
+
+            # Compute score as softmax probability of 'yes'
+            # score = exp(yes) / (exp(yes) + exp(no))
+            max_logit = mx.maximum(yes_logits, no_logits)
+            yes_exp = mx.exp(yes_logits - max_logit)
+            no_exp = mx.exp(no_logits - max_logit)
+            scores = yes_exp / (yes_exp + no_exp)
+
+            return scores
+
+        except Exception as e:
+            logger.warning(f"LM head scoring failed: {e}, falling back to hidden state scoring")
+            return None
+
     def _compute_scores(self, pooled: "mx.array") -> "mx.array":
         """
-        Compute relevance scores from pooled representations.
+        Compute relevance scores from pooled hidden states.
 
-        For Qwen3 rerankers, we use the norm of the pooled representation
-        or can apply a learned head if available.
+        This is a fallback when LM head scoring isn't available.
+        Uses a projection of the hidden state that correlates with relevance.
 
         Args:
             pooled: [batch_size, hidden_size]
@@ -284,12 +360,10 @@ class MLXCrossEncoderBackend(BaseBackend):
         Returns:
             Scores [batch_size]
         """
-        # Simple approach: use L2 norm of pooled representation as score
-        # This works because more relevant passages produce more "activated" representations
-        scores = mx.linalg.norm(pooled, axis=-1)
+        # Use the mean of the hidden state as a proxy for "activation level"
+        # More relevant passages tend to have higher activation
+        scores = mx.mean(pooled, axis=-1)
 
-        # Alternative: could use a specific output token or learned head
-        # For now, normalize to reasonable range
         return scores
 
     def _normalize_scores(self, scores: np.ndarray) -> np.ndarray:
@@ -416,20 +490,28 @@ class MLXCrossEncoderBackend(BaseBackend):
     def _rerank_sync(self, query: str, passages: List[str]) -> List[float]:
         """
         Synchronous cross-encoder reranking with full transformer forward pass.
+
+        Uses Qwen3-Reranker format:
+        <Instruct>: {instruction}
+        <Query>: {query}
+        <Document>: {document}
+
+        Tries LM head yes/no scoring first, falls back to hidden state scoring.
         """
         all_scores = []
+
+        # Qwen3-Reranker instruction
+        instruction = "Given a web search query and a document, determine if the document is relevant to the query. Answer only 'yes' or 'no'."
 
         # Process in batches
         for i in range(0, len(passages), self._batch_size):
             batch_passages = passages[i:i + self._batch_size]
 
-            # Tokenize query-passage pairs
-            # For cross-encoder, we concatenate query and passage with separator
+            # Format inputs using Qwen3-Reranker format
             pairs = []
             for passage in batch_passages:
-                # Format: "query: {query} passage: {passage}" or similar
-                # This depends on how the model was trained
-                pair_text = f"Query: {query}\n\nPassage: {passage}"
+                # Qwen3-Reranker format
+                pair_text = f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {passage}"
                 pairs.append(pair_text)
 
             # Tokenize all pairs using our compatible tokenization method
@@ -438,26 +520,35 @@ class MLXCrossEncoderBackend(BaseBackend):
             input_ids = _mx_array(encodings['input_ids'])
             attention_mask = _mx_array(encodings['attention_mask'])
 
-            # Run full transformer forward pass
-            hidden_states = self._get_hidden_states(input_ids)
+            # Try LM head scoring first (proper yes/no logits)
+            batch_scores_mx = self._compute_scores_with_lm_head(input_ids, attention_mask)
 
-            # Pool hidden states
-            pooled = self._pool_hidden_states(hidden_states, attention_mask)
+            if batch_scores_mx is not None:
+                # LM head scoring succeeded - scores are already in [0, 1]
+                mx.eval(batch_scores_mx)
+                batch_scores = np.array(batch_scores_mx.tolist(), dtype=np.float32)
+                # These are already normalized probabilities
+                all_scores.extend(batch_scores.tolist())
+            else:
+                # Fall back to hidden state scoring
+                hidden_states = self._get_hidden_states(input_ids)
+                pooled = self._pool_hidden_states(hidden_states, attention_mask)
+                scores = self._compute_scores(pooled)
+                mx.eval(scores)
+                batch_scores = np.array(scores.tolist(), dtype=np.float32)
+                all_scores.extend(batch_scores.tolist())
 
-            # Compute raw scores
-            scores = self._compute_scores(pooled)
-
-            # Force evaluation and convert to numpy
-            mx.eval(scores)
-            batch_scores = np.array(scores.tolist(), dtype=np.float32)
-
-            all_scores.extend(batch_scores.tolist())
-
-        # Normalize all scores together
+        # Normalize scores if using hidden state fallback
         scores_array = np.array(all_scores)
-        normalized = self._normalize_scores(scores_array)
 
-        return normalized.tolist()
+        # Check if scores are already normalized (from LM head)
+        if np.all((scores_array >= 0) & (scores_array <= 1)):
+            # Already normalized from LM head
+            return scores_array.tolist()
+        else:
+            # Apply normalization for hidden state scores
+            normalized = self._normalize_scores(scores_array)
+            return normalized.tolist()
 
     def _fallback_rerank(self, query: str, passages: List[str]) -> List[float]:
         """Fallback using Jaccard similarity."""
