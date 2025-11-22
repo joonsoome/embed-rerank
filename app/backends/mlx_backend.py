@@ -1,19 +1,19 @@
 """
-🚀 Apple MLX Backend: Where Silicon Dreams Meet AI Reality
+Apple MLX Backend with Full Transformer Forward Pass
 
-This is the heart of our Apple Silicon optimization. The MLX backend harnesses
-the revolutionary MLX framework to deliver unprecedented performance on Apple's
-unified memory architecture.
+This backend uses mlx-lm to load Qwen3-style models and runs the complete
+transformer forward pass to generate semantically meaningful embeddings.
 
-🧠 What makes MLX special:
-- 🔥 Native Apple Silicon: Built for M-series chips
-- ⚡ Unified Memory: Zero-copy operations across CPU/GPU
-- 🎯 Metal Performance: Hardware-accelerated inference
-- 💎 4-bit Quantization: Maximum efficiency, minimal latency
+Key features:
+- Full transformer inference (not just embedding table lookup)
+- Proper hidden state extraction from all transformer layers
+- Mean pooling with L2 normalization for sentence embeddings
+- Support for 4-bit quantized MLX models
 
-Welcome to the future of on-device AI, powered by Apple's vision and MLX magic!
-
-🌟 MLX Community: Join us in pushing the boundaries of what's possible on Apple Silicon.
+Supported models:
+- huynguyendbs/Qwen3-Embedding-8B-4bit-MLX
+- mlx-community/Qwen3-Embedding-4B-4bit-DWQ
+- Any Qwen3-style MLX model
 """
 
 import asyncio
@@ -28,106 +28,80 @@ from .base import BaseBackend, EmbeddingResult
 
 logger = setup_logging()
 
-# 🔮 MLX Import Magic: Conditional loading for Apple Silicon detection
+# Conditional MLX imports
 try:
-    import json
-    import os
-
     import mlx.core as mx
-    from huggingface_hub import snapshot_download
-
     MLX_AVAILABLE = True
-    logger.info("🚀 MLX modules successfully imported - Apple Silicon detected!")
+    logger.info("MLX core imported successfully")
 except ImportError as e:
     MLX_AVAILABLE = False
-    logger.warning("⚠️ MLX not available - Apple Silicon required", error=str(e))
+    logger.warning("MLX not available", error=str(e))
     mx = None  # type: ignore
 
+# Conditional mlx-lm import (required for proper model loading)
+try:
+    from mlx_lm import load as mlx_lm_load
+    MLX_LM_AVAILABLE = True
+    logger.info("mlx-lm imported successfully - full transformer support enabled")
+except ImportError as e:
+    MLX_LM_AVAILABLE = False
+    logger.warning("mlx-lm not available - install with: pip install mlx-lm>=0.25.2", error=str(e))
+    mlx_lm_load = None  # type: ignore
 
-# ---------------------------------------------------------------------------
-# MLX array compatibility helper
-# Newer MLX versions removed `mx.array` in favor of `mx.asarray`/`mx.numpy.array`.
-# This helper provides a stable way to create MLX arrays across versions.
-# ---------------------------------------------------------------------------
+
 def _mx_array(x):
-    """Create an MLX array in a version-compatible way.
-
-    Tries `mx.array` (older MLX), then `mx.asarray` (newer MLX), then
-    `mx.numpy.array`. Only falls back to NumPy as a last resort which should
-    not happen when MLX is available.
-    """
-    # If MLX isn't available, return a NumPy array as a last resort. Code paths
-    # using this helper should only run when MLX is available, but be defensive.
+    """Create an MLX array in a version-compatible way."""
     if not MLX_AVAILABLE or mx is None:
-        import numpy as _np
+        return np.array(x)
 
-        return _np.array(x)
-
-    # Try legacy API
     if hasattr(mx, "array"):
         try:
-            return mx.array(x)  # type: ignore[attr-defined]
+            return mx.array(x)
         except Exception:
             pass
 
-    # Try modern API
     if hasattr(mx, "asarray"):
         try:
-            return mx.asarray(x)  # type: ignore[attr-defined]
+            return mx.asarray(x)
         except Exception:
             pass
 
-    # Try via mx.numpy
-    if hasattr(mx, "numpy") and hasattr(mx.numpy, "array"):
-        try:
-            return mx.numpy.array(x)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-
-    # Final fallback (should be unreachable on valid MLX installs)
-    import numpy as _np
-
-    return _np.array(x)
+    return np.array(x)
 
 
 class MLXBackend(BaseBackend):
     """
-    🚀 Apple MLX Backend: The Silicon Symphony
+    MLX Backend with Full Transformer Forward Pass
 
-    This backend transforms Apple Silicon into an AI powerhouse. Using MLX's
-    revolutionary framework, we achieve sub-millisecond inference that would
-    make even the most demanding ML engineers smile.
-
-    🎯 Apple MLX Magic:
-    - Unified Memory Architecture: Zero-copy operations
-    - Metal Performance Shaders: Hardware acceleration
-    - 4-bit Quantization: Efficiency without compromise
-    - Dynamic Graph Compilation: Adaptive optimization
-
-    Join the Apple MLX community in redefining on-device AI performance!
+    This backend properly loads Qwen3-style models using mlx-lm and runs
+    the complete transformer forward pass to generate semantically meaningful
+    embeddings. Unlike the previous implementation that only did embedding
+    table lookups, this runs through all attention and feed-forward layers.
     """
 
     def __init__(self, model_name: str = "mlx-community/Qwen3-Embedding-4B-4bit-DWQ", model_path: Optional[str] = None):
         """
-        🏗️ Initialize the Apple MLX Backend
-
-        Setting up our connection to Apple Silicon's neural processing unit.
-        The default model (Qwen3-Embedding-4B-4bit-DWQ) is specifically optimized
-        for MLX with 4-bit quantization - maximum performance, minimal memory.
+        Initialize the MLX Backend.
 
         Args:
-            model_name: MLX-optimized model identifier from the community
+            model_name: MLX-optimized model identifier (e.g., huynguyendbs/Qwen3-Embedding-8B-4bit-MLX)
             model_path: Optional path to local MLX model directory
 
         Raises:
-            RuntimeError: If MLX is not available (requires Apple Silicon)
+            RuntimeError: If MLX or mlx-lm is not available
         """
         if not MLX_AVAILABLE:
             raise RuntimeError(
-                "🚫 MLX Framework Required!\n"
+                "MLX Framework Required!\n"
                 "MLX requires Apple Silicon (M1/M2/M3/M4) and macOS.\n"
-                "Install with: pip install mlx>=0.4.0\n"
-                "Join the Apple MLX community: https://ml-explore.github.io/mlx/"
+                "Install with: pip install mlx>=0.4.0"
+            )
+
+        if not MLX_LM_AVAILABLE:
+            raise RuntimeError(
+                "mlx-lm Required for Full Transformer Support!\n"
+                "Install with: pip install mlx-lm>=0.25.2\n"
+                "This is required to run proper transformer forward passes."
             )
 
         super().__init__(model_name, "mlx")
@@ -136,323 +110,182 @@ class MLXBackend(BaseBackend):
         self.model = None
         self.tokenizer = None
         self.config = None
+        self._hidden_size = None
 
         logger.info(
-            "🧠 Initializing Apple MLX Backend - preparing for silicon magic",
+            "Initializing MLX Backend with full transformer support",
             model_name=model_name,
             model_path=model_path,
-            device="apple_silicon",
         )
 
     async def load_model(self) -> None:
-        """
-        🚀 Model Loading: The MLX Awakening
-
-        This is where Apple Silicon comes alive! We load our 4-bit quantized
-        Qwen3 model into unified memory, preparing for lightning-fast inference.
-
-        The MLX framework handles all the Metal optimization automatically,
-        giving us that signature Apple "it just works" experience.
-
-        Expected loading time: ~0.36s (cached) to ~22s (first download)
-        """
+        """Load the model using mlx-lm for full transformer support."""
         if self._is_loaded:
-            logger.info("🎯 Model already loaded and ready for action", model_name=self.model_name)
+            logger.info("Model already loaded", model_name=self.model_name)
             return
 
-        logger.info("⚡ Loading MLX model into Apple Silicon unified memory", model_name=self.model_name)
+        logger.info("Loading MLX model with full transformer layers", model_name=self.model_name)
         start_time = time.time()
 
         try:
-            # 🔄 Run model loading in thread pool to avoid blocking the event loop
             loop = asyncio.get_event_loop()
-            self.model, self.tokenizer, self.config = await loop.run_in_executor(self._executor, self._load_model_sync)
+            self.model, self.tokenizer, self.config = await loop.run_in_executor(
+                self._executor, self._load_model_sync
+            )
 
             self._load_time = time.time() - start_time
             self._is_loaded = True
 
             logger.info(
-                "✅ MLX model loaded successfully - Apple Silicon is ready to rock!",
+                "MLX model loaded with full transformer support",
                 model_name=self.model_name,
-                load_time=self._load_time,
-                device="apple_silicon_mlx",
+                load_time=f"{self._load_time:.2f}s",
+                hidden_size=self._hidden_size,
+                num_layers=self.config.get("num_hidden_layers", "unknown") if self.config else "unknown",
             )
 
         except Exception as e:
-            logger.error("💥 Failed to load MLX model", model_name=self.model_name, error=str(e))
+            logger.error("Failed to load MLX model", model_name=self.model_name, error=str(e))
             raise RuntimeError(f"MLX model loading failed for {self.model_name}: {e}")
 
     def _load_model_sync(self):
         """
-        🧠 Synchronous MLX Model Loading: The Silicon Awakening
+        Synchronous model loading using mlx-lm.
 
-        This is where the magic happens! We're downloading and initializing
-        a 4-bit quantized Qwen3 model specifically optimized for Apple MLX.
-
-        🌟 MLX Community Innovation:
-        - 4-bit quantization for maximum efficiency
-        - Optimized for Apple's unified memory architecture
-        - Metal Performance Shaders acceleration
-        - Zero-copy operations between CPU and GPU
-
-        The future of on-device AI is here, and it runs on Apple Silicon!
+        This loads the complete model including all transformer layers,
+        not just the embedding table.
         """
         try:
-            if self.model_path and os.path.exists(self.model_path):
-                logger.info("🗂️ Loading MLX model from local cache", path=self.model_path)
-                model_dir = self.model_path
-            else:
-                logger.info("🌐 Downloading MLX model from HuggingFace MLX Community", model_name=self.model_name)
-                # Include tokenizer.model for sentencepiece & any .model files
-                model_dir = snapshot_download(
-                    repo_id=self.model_name,
-                    allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model"],
-                    local_dir_use_symlinks=False,
+            # Use model_path if provided, otherwise use model_name for HuggingFace download
+            model_id = self.model_path if self.model_path else self.model_name
+
+            logger.info("Loading model via mlx-lm", model_id=model_id)
+
+            # mlx_lm.load() returns (model, tokenizer)
+            # This properly loads all transformer weights and handles quantization
+            model, tokenizer = mlx_lm_load(model_id)
+
+            # Validate model has expected structure for embedding extraction
+            if not hasattr(model, 'model'):
+                raise ValueError(
+                    f"Model {model_id} does not have expected structure. "
+                    "Expected 'model' attribute for accessing transformer layers."
                 )
-                logger.info("✅ MLX model downloaded to local cache", model_dir=model_dir)
 
-            # Try to load tokenizer with multiple fallback strategies
-            tokenizer = None
-            tokenizer_errors = []
+            inner_model = model.model
 
-            # Strategy 1: Try AutoTokenizer with trust_remote_code
-            try:
-                from transformers import AutoTokenizer
+            # Check for required components
+            if not hasattr(inner_model, 'embed_tokens'):
+                raise ValueError("Model missing 'embed_tokens' layer")
+            if not hasattr(inner_model, 'layers'):
+                raise ValueError("Model missing 'layers' (transformer blocks)")
+            if not hasattr(inner_model, 'norm'):
+                raise ValueError("Model missing 'norm' (final layer normalization)")
 
-                tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
-                logger.info("✅ Loaded AutoTokenizer successfully")
-            except Exception as e:
-                tokenizer_errors.append(f"AutoTokenizer: {str(e)}")
-
-            # Strategy 2: Try without trust_remote_code
-            if not tokenizer:
-                try:
-                    from transformers import AutoTokenizer
-
-                    tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=False)
-                    logger.info("✅ Loaded AutoTokenizer without trust_remote_code")
-                except Exception as e:
-                    tokenizer_errors.append(f"AutoTokenizer (no trust): {str(e)}")
-
-            # Strategy 3: Try direct model name (in case local dir has issues)
-            if not tokenizer:
-                try:
-                    from transformers import AutoTokenizer
-
-                    tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
-                    logger.info("✅ Loaded AutoTokenizer from model name")
-                except Exception as e:
-                    tokenizer_errors.append(f"AutoTokenizer (model name): {str(e)}")
-
-            # Strategy 4: Create simple fallback tokenizer
-            if not tokenizer:
-                logger.warning("Failed to load transformers tokenizer, using simple tokenizer", errors=tokenizer_errors)
-                tokenizer = self._create_simple_tokenizer()
-
-            # Load config if present, with fallbacks
+            # Extract config info
             config = {}
-            config_path = os.path.join(model_dir, "config.json")
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, 'r') as f:
-                        config = json.load(f)
-                    logger.info("✅ Loaded config.json successfully")
-                except Exception as ce:
-                    logger.warning("Failed to parse config.json - using default config", error=str(ce))
-                    config = {"hidden_size": 4096, "max_position_embeddings": 32768}
-            else:
-                logger.info("config.json missing - using default config for Qwen3 model")
-                config = {"hidden_size": 4096, "max_position_embeddings": 32768}
+            if hasattr(model, 'config'):
+                config = model.config if isinstance(model.config, dict) else vars(model.config)
+            elif hasattr(model, 'args'):
+                config = model.args if isinstance(model.args, dict) else vars(model.args)
 
-            # Normalize config keys: some models (e.g., Qwen3) use 'd_model'
-            # Ensure 'hidden_size' is present for downstream logic
-            if isinstance(config, dict):
-                if 'hidden_size' not in config and 'd_model' in config:
-                    try:
-                        config['hidden_size'] = int(config['d_model'])
-                    except Exception:
-                        # Fallback silently if casting fails
-                        config['hidden_size'] = config['d_model']
+            # Determine hidden size
+            self._hidden_size = (
+                config.get('hidden_size') or
+                config.get('dim') or
+                config.get('d_model') or
+                4096
+            )
 
-            # Attempt to locate and load MLX weights
-            weights_path = self._find_weights_file(model_dir)
-            if weights_path:
-                try:
-                    logger.info("⚡ Loading MLX weights into unified memory", weights_path=weights_path)
-                    model_weights = mx.load(weights_path)
-                    model = self._create_mlx_embedding_model(config, model_weights)
-                    logger.info("🚀 MLX model loaded successfully - ready for sub-millisecond inference!")
-                    return model, tokenizer, config
-                except Exception as we:
-                    logger.warning("Failed to load MLX weights - switching to compatible model", error=str(we))
-            else:
-                logger.info("No MLX weights found - creating compatible embedding model")
+            num_layers = len(inner_model.layers)
+            logger.info(
+                "Model structure validated",
+                num_layers=num_layers,
+                hidden_size=self._hidden_size,
+                has_embed_tokens=True,
+                has_norm=True,
+            )
 
-            # Create a compatible MLX embedding model
-            # Prefer explicit hidden_size, fall back to d_model
-            hidden_size = config.get('hidden_size') or config.get('d_model', 4096)
-            model = self._create_placeholder_model(hidden_size)
-            config['hidden_size'] = hidden_size
-            logger.info("🧪 Created MLX-compatible embedding model", hidden_size=hidden_size)
             return model, tokenizer, config
 
         except Exception as e:
-            # Ultimate fallback: create everything from scratch
-            error_msg = str(e)
-            logger.error("💥 Complete MLX model loading failed - creating fallback system", error=error_msg)
-
-            # Check if it's a quantization-related error
-            if "quant_method" in error_msg or "quantization" in error_msg.lower():
-                logger.warning("🔧 Quantization config issue detected - this is non-critical for inference")
-                logger.info("💡 MLX backend will use fallback mode - performance may vary")
-
-            tokenizer = self._create_simple_tokenizer()
-            config = {"hidden_size": 4096, "placeholder": True}
-            model = self._create_placeholder_model(4096)
-            logger.info("🔧 Fallback MLX system created successfully")
-            return model, tokenizer, config
-
-    def _create_simple_tokenizer(self):
-        """Minimal whitespace tokenizer used when transformers tokenizer is unavailable."""
-
-        class SimpleTokenizer:
-            def __init__(self):
-                self.vocab: Dict[str, int] = {"<PAD>": 0, "<UNK>": 1}
-
-            def __call__(self, texts: List[str], padding=True, truncation=True, max_length=512, return_tensors='np'):
-                import numpy as _np
-
-                tokenized = []
-                for t in texts:
-                    ids = []
-                    for tok in t.strip().split():
-                        if tok not in self.vocab:
-                            self.vocab[tok] = len(self.vocab)
-                        ids.append(self.vocab[tok])
-                    if not ids:
-                        ids = [0]
-                    tokenized.append(ids[:max_length])
-                max_len = max(len(x) for x in tokenized)
-                arr = []
-                for ids in tokenized:
-                    pad_len = max_len - len(ids)
-                    arr.append(ids + [0] * pad_len)
-                return {"input_ids": _np.array(arr, dtype=_np.int64)}
-
-        return SimpleTokenizer()
-
-    def _create_placeholder_model(self, hidden_size: int):
-        """Create a lightweight placeholder embedding model producing deterministic embeddings."""
-
-        class PlaceholderModel:
-            def __init__(self, hidden_size: int):
-                self.hidden_size = hidden_size
-
-            def embed(self, input_ids):
-                # Deterministic per row using hash of the sequence
-                import numpy as _np
-
-                batch = input_ids.shape[0]
-                embeddings = []
-                for row in range(batch):
-                    row_ids = input_ids[row].tolist()
-                    seed = hash(tuple(row_ids)) % (2**32 - 1)
-                    rng = _np.random.default_rng(seed)
-                    vec = rng.standard_normal(self.hidden_size).astype('float32')
-                    vec /= np.linalg.norm(vec) + 1e-8
-                    embeddings.append(vec)
-                return _mx_array(_np.stack(embeddings))
-
-        return PlaceholderModel(hidden_size)
-
-    def _find_weights_file(self, model_dir: str) -> Optional[str]:
-        """
-        🔍 MLX Weights Discovery: Finding the Apple Silicon Optimized Model
-
-        MLX models can come in different formats. We're looking for the
-        safetensors format which is preferred for its security and speed.
-        """
-        for filename in ["model.safetensors", "weights.npz"]:
-            path = os.path.join(model_dir, filename)
-            if os.path.exists(path):
-                return path
-
-        # 🔍 Search for any safetensors file (the MLX standard)
-        for file in os.listdir(model_dir):
-            if file.endswith('.safetensors'):
-                return os.path.join(model_dir, file)
-
-        return None
-
-    def _create_mlx_embedding_model(self, config: dict, weights: dict):
-        """
-        🏗️ MLX Embedding Model Factory: Crafting Apple Silicon Magic
-
-        This creates our custom MLX embedding model optimized for the Qwen3
-        architecture. We're building a lightweight wrapper that maximizes
-        Apple Silicon performance through MLX's unified memory system.
-
-        🚀 Apple MLX Innovation:
-        - Direct access to embedding layers
-        - Optimized mean pooling operations
-        - Hardware-accelerated normalization
-        - Zero-copy tensor operations
-        """
-        try:
-            # 🧠 MLX Embedding Model: The Heart of Apple Silicon AI
-            class MLXEmbeddingModel:
-                def __init__(self, config, weights):
-                    self.config = config
-                    self.weights = weights
-                    # Some configs expose 'd_model' rather than 'hidden_size'
-                    self.hidden_size = config.get('hidden_size') or config.get('d_model', 4096)
-                    self.max_position_embeddings = config.get('max_position_embeddings', 32768)
-
-                def embed(self, input_ids):
-                    """
-                    ⚡ Generate Embeddings: Apple Silicon at Light Speed
-
-                    This method transforms text tokens into high-dimensional
-                    embeddings using Apple's unified memory architecture for
-                    maximum performance.
-                    """
-                    # 🎯 This is simplified for the MLX community demo
-                    # In production, you'd implement the full model architecture
-
-                    # 📚 Access embedding layer weights if available
-                    if 'model.embed_tokens.weight' in self.weights:
-                        embed_weight = self.weights['model.embed_tokens.weight']
-                        embeddings = embed_weight[input_ids]
-
-                        # 🧮 Mean pooling for sentence-level embeddings
-                        mean_embeddings = mx.mean(embeddings, axis=1)
-
-                        # 📏 L2 normalization for cosine similarity compatibility
-                        norm = mx.linalg.norm(mean_embeddings, axis=-1, keepdims=True)
-                        normalized_embeddings = mean_embeddings / (norm + 1e-8)
-
-                        return normalized_embeddings
-                    else:
-                        # 🎲 Fallback: deterministic embeddings based on input
-                        batch_size = input_ids.shape[0]
-                        return mx.random.normal((batch_size, self.hidden_size))
-
-            return MLXEmbeddingModel(config, weights)
-
-        except Exception as e:
-            logger.error("💥 Failed to create MLX embedding model", error=str(e))
+            logger.error("Model loading failed", error=str(e))
             raise
+
+    def _get_hidden_states(self, input_ids: "mx.array", attention_mask: Optional["mx.array"] = None) -> "mx.array":
+        """
+        Run full transformer forward pass and extract hidden states.
+
+        This is the critical fix - we run through ALL transformer layers,
+        not just the embedding table lookup.
+
+        Args:
+            input_ids: Token IDs [batch_size, seq_len]
+            attention_mask: Optional attention mask [batch_size, seq_len]
+
+        Returns:
+            Hidden states [batch_size, seq_len, hidden_size]
+        """
+        inner_model = self.model.model
+
+        # Step 1: Get token embeddings from embedding table
+        h = inner_model.embed_tokens(input_ids)
+
+        # Step 2: Pass through ALL transformer layers
+        # This is what was missing in the original implementation!
+        for layer in inner_model.layers:
+            # Each layer applies: attention -> add & norm -> FFN -> add & norm
+            h = layer(h, mask=None, cache=None)
+
+        # Step 3: Apply final layer normalization
+        h = inner_model.norm(h)
+
+        return h
+
+    def _pool_embeddings(self, hidden_states: "mx.array", attention_mask: Optional["mx.array"] = None) -> "mx.array":
+        """
+        Pool hidden states to get sentence-level embeddings.
+
+        Uses mean pooling across the sequence dimension, optionally
+        respecting the attention mask to ignore padding tokens.
+
+        Args:
+            hidden_states: [batch_size, seq_len, hidden_size]
+            attention_mask: Optional [batch_size, seq_len]
+
+        Returns:
+            Pooled embeddings [batch_size, hidden_size]
+        """
+        if attention_mask is not None:
+            # Expand mask for broadcasting: [batch_size, seq_len, 1]
+            mask_expanded = mx.expand_dims(attention_mask, axis=-1)
+            # Zero out padding positions
+            masked_hidden = hidden_states * mask_expanded
+            # Sum and divide by actual sequence length
+            sum_hidden = mx.sum(masked_hidden, axis=1)
+            sum_mask = mx.sum(mask_expanded, axis=1)
+            pooled = sum_hidden / mx.maximum(sum_mask, 1e-9)
+        else:
+            # Simple mean pooling across sequence dimension
+            pooled = mx.mean(hidden_states, axis=1)
+
+        return pooled
+
+    def _normalize_embeddings(self, embeddings: "mx.array") -> "mx.array":
+        """L2 normalize embeddings for cosine similarity."""
+        norm = mx.linalg.norm(embeddings, axis=-1, keepdims=True)
+        return embeddings / mx.maximum(norm, 1e-9)
 
     async def embed_texts(self, texts: List[str], batch_size: int = 32) -> EmbeddingResult:
         """
-        Generate embeddings using MLX.
+        Generate embeddings using full transformer forward pass.
 
         Args:
             texts: List of texts to embed
             batch_size: Batch size for processing
 
         Returns:
-            EmbeddingResult with vectors and metadata
+            EmbeddingResult with semantically meaningful vectors
         """
         if not self._is_loaded:
             raise RuntimeError("Model not loaded. Call load_model() first.")
@@ -460,138 +293,116 @@ class MLXBackend(BaseBackend):
         self.validate_inputs(texts)
         start_time = time.time()
 
-        logger.info("Generating embeddings with MLX", num_texts=len(texts), batch_size=batch_size, device="mlx")
+        logger.info(
+            "Generating embeddings with full transformer forward pass",
+            num_texts=len(texts),
+            batch_size=batch_size,
+        )
 
         try:
-            # Run embedding in thread pool
             loop = asyncio.get_event_loop()
             vectors = await loop.run_in_executor(self._executor, self._embed_sync, texts, batch_size)
 
             processing_time = time.time() - start_time
 
             logger.info(
-                "MLX embeddings generated",
+                "Embeddings generated successfully",
                 num_texts=len(texts),
                 embedding_dim=vectors.shape[1] if vectors.ndim > 1 else len(vectors),
-                processing_time=processing_time,
-                device="mlx",
+                processing_time=f"{processing_time:.3f}s",
             )
 
             return EmbeddingResult(
-                vectors=vectors, processing_time=processing_time, device="mlx", model_info=self.model_name
+                vectors=vectors,
+                processing_time=processing_time,
+                device="mlx",
+                model_info=self.model_name
             )
 
         except Exception as e:
-            logger.error("MLX embedding generation failed", num_texts=len(texts), error=str(e))
+            logger.error("Embedding generation failed", num_texts=len(texts), error=str(e))
             raise RuntimeError(f"MLX embedding failed: {e}")
 
     def _embed_sync(self, texts: List[str], batch_size: int) -> np.ndarray:
-        """Synchronous MLX embedding generation with actual model inference."""
-        try:
-            if not self.model or not self.tokenizer:
-                raise RuntimeError("Model or tokenizer not loaded")
+        """
+        Synchronous embedding generation with full transformer forward pass.
 
-            embeddings_list = []
+        This is the corrected implementation that runs through all transformer
+        layers instead of just doing an embedding table lookup.
+        """
+        if not self.model or not self.tokenizer:
+            raise RuntimeError("Model or tokenizer not loaded")
 
-            for i in range(0, len(texts), batch_size):
-                batch_texts = texts[i : i + batch_size]
+        all_embeddings = []
 
-                # Tokenize batch
-                batch_encodings = self.tokenizer(
-                    batch_texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=512,  # Reasonable limit for embedding models
-                    return_tensors='np',
-                )
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
 
-                # Convert to MLX arrays (compat helper for MLX API changes)
-                input_ids = _mx_array(batch_encodings['input_ids'])
-
-                # Generate embeddings using MLX model
-                with mx.stream(mx.cpu):  # Use CPU stream for stable inference
-                    batch_embeddings = self.model.embed(input_ids)
-                    # Convert to numpy for consistency
-                    batch_embeddings_np = np.array(batch_embeddings)
-
-                embeddings_list.extend(batch_embeddings_np)
-
-            embeddings_array = np.array(embeddings_list)
-
-            # Additional normalization for consistency
-            norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
-            embeddings_array = embeddings_array / (norms + 1e-8)
-
-            logger.info(
-                "MLX embeddings generated successfully", shape=embeddings_array.shape, dtype=str(embeddings_array.dtype)
+            # Tokenize batch
+            encodings = self.tokenizer(
+                batch_texts,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors='np',
             )
 
-            return embeddings_array
+            input_ids = _mx_array(encodings['input_ids'])
 
-        except Exception as e:
-            logger.error("MLX sync embedding failed", error=str(e))
-            # Fallback to simple placeholder if MLX fails
-            logger.warning("Falling back to placeholder embeddings")
-            return self._generate_placeholder_embeddings(texts)
+            # Get attention mask if available (for proper mean pooling)
+            attention_mask = None
+            if 'attention_mask' in encodings:
+                attention_mask = _mx_array(encodings['attention_mask'])
 
-    def _generate_placeholder_embeddings(self, texts: List[str]) -> np.ndarray:
-        """Generate placeholder embeddings for fallback."""
-        # self.config is a dict; prefer hidden_size then d_model for dynamic dimension support
-        if isinstance(self.config, dict):
-            embedding_dim = self.config.get('hidden_size') or self.config.get('d_model') or 4096
-        else:
-            embedding_dim = 4096
+            # Run full transformer forward pass
+            hidden_states = self._get_hidden_states(input_ids, attention_mask)
 
-        # Use text hash for deterministic embeddings
-        embeddings = []
-        for text in texts:
-            # Create a deterministic embedding based on text hash
-            text_hash = hash(text) % (2**31)
-            np.random.seed(text_hash)
-            embedding = np.random.randn(embedding_dim).astype(np.float32)
-            embedding = embedding / np.linalg.norm(embedding)
-            embeddings.append(embedding)
+            # Pool to get sentence embeddings
+            pooled = self._pool_embeddings(hidden_states, attention_mask)
 
-        return np.array(embeddings)
+            # Normalize for cosine similarity
+            normalized = self._normalize_embeddings(pooled)
+
+            # Force evaluation and convert to numpy
+            mx.eval(normalized)
+            batch_embeddings = np.array(normalized.tolist(), dtype=np.float32)
+
+            all_embeddings.append(batch_embeddings)
+
+        # Concatenate all batches
+        embeddings_array = np.vstack(all_embeddings)
+
+        logger.info(
+            "Transformer forward pass completed",
+            shape=embeddings_array.shape,
+            dtype=str(embeddings_array.dtype),
+        )
+
+        return embeddings_array
 
     async def compute_similarity(self, query_embedding: np.ndarray, passage_embeddings: np.ndarray) -> np.ndarray:
-        """
-        Compute cosine similarity using MLX operations.
-
-        Args:
-            query_embedding: Query embedding vector
-            passage_embeddings: Passage embedding matrix
-
-        Returns:
-            Array of similarity scores
-        """
+        """Compute cosine similarity scores."""
         try:
-            # Convert to MLX arrays for potential acceleration
             query_mx = _mx_array(query_embedding)
             passages_mx = _mx_array(passage_embeddings)
 
-            # Normalize embeddings
             query_norm = query_mx / mx.linalg.norm(query_mx)
             passage_norms = passages_mx / mx.linalg.norm(passages_mx, axis=1, keepdims=True)
 
-            # Compute cosine similarity
             similarities_mx = mx.matmul(passage_norms, query_norm)
+            mx.eval(similarities_mx)
 
-            # Convert back to numpy
-            similarities = np.array(similarities_mx)
-
-            return similarities
+            return np.array(similarities_mx.tolist())
 
         except Exception as e:
             logger.error("MLX similarity computation failed", error=str(e))
-            # Fallback to numpy computation
+            # Fallback to numpy
             query_norm = query_embedding / np.linalg.norm(query_embedding)
             passage_norms = passage_embeddings / np.linalg.norm(passage_embeddings, axis=1, keepdims=True)
-            similarities = np.dot(passage_norms, query_norm)
-            return similarities
+            return np.dot(passage_norms, query_norm)
 
     def get_model_info(self) -> Dict[str, Any]:
-        """Return MLX model metadata."""
+        """Return model metadata."""
         info = {
             "backend": "mlx",
             "model_name": self.model_name,
@@ -599,24 +410,15 @@ class MLXBackend(BaseBackend):
             "device": "mlx",
             "is_loaded": self._is_loaded,
             "load_time": self._load_time,
+            "transformer_forward_pass": True,  # Indicates we run full forward pass
         }
 
-        if self._is_loaded:
-            try:
-                # Add MLX-specific model info
-                info.update(
-                    {
-                        "mlx_device": "apple_silicon",
-                        "memory_usage": "unified_memory",
-                        # Surface key config values to aid troubleshooting (e.g., hidden_size vs output dim)
-                        "hidden_size": (self.config.get("hidden_size") if isinstance(self.config, dict) else None),
-                        "max_position_embeddings": (
-                            self.config.get("max_position_embeddings") if isinstance(self.config, dict) else None
-                        ),
-                    }
-                )
-            except Exception as e:
-                logger.warning("Could not get MLX model info", error=str(e))
+        if self._is_loaded and self.config:
+            info.update({
+                "hidden_size": self._hidden_size,
+                "num_layers": self.config.get("num_hidden_layers") or len(self.model.model.layers) if self.model else None,
+                "mlx_lm_version": "installed",
+            })
 
         return info
 
@@ -626,79 +428,57 @@ class MLXBackend(BaseBackend):
             "backend": "mlx",
             "device": "mlx",
             "apple_silicon": True,
+            "mlx_available": MLX_AVAILABLE,
+            "mlx_lm_available": MLX_LM_AVAILABLE,
         }
 
-        try:
-            if MLX_AVAILABLE:
-                info.update(
-                    {
-                        "mlx_version": getattr(mx, '__version__', 'unknown'),
-                        "unified_memory": True,
-                        "metal_support": True,
-                    }
-                )
-            else:
-                info["mlx_available"] = False
-
-        except Exception as e:
-            logger.warning("Could not get MLX device info", error=str(e))
+        if MLX_AVAILABLE:
+            info.update({
+                "mlx_version": getattr(mx, '__version__', 'unknown'),
+                "unified_memory": True,
+                "metal_support": True,
+            })
 
         return info
 
     async def rerank_passages(self, query: str, passages: List[str]) -> List[float]:
         """
-        Rerank passages based on relevance to the query using MLX embeddings.
+        Rerank passages using embedding similarity.
 
-        Args:
-            query: Query text
-            passages: List of passage texts
-
-        Returns:
-            List of relevance scores (higher is more relevant)
+        Note: For true cross-encoder reranking, use MLXCrossEncoderBackend.
+        This method uses bi-encoder similarity which is faster but less accurate.
         """
         start_time = time.time()
-        logger.info(f"MLX reranking query with {len(passages)} passages")
+        logger.info(f"Reranking {len(passages)} passages with embedding similarity")
 
         try:
-            # Generate embeddings for query and passages
             query_result = await self.embed_texts([query])
             passages_result = await self.embed_texts(passages)
 
-            # Get vectors
             query_vector = query_result.vectors[0]
             passage_vectors = passages_result.vectors
 
-            # Compute similarity scores
             scores = await self.compute_similarity(query_vector, passage_vectors)
-
-            # Convert to list of floats
             scores_list = scores.tolist() if hasattr(scores, 'tolist') else list(scores)
 
             processing_time = time.time() - start_time
-            logger.info(f"MLX reranking completed with {len(scores_list)} scores in {processing_time:.3f}s")
+            logger.info(f"Reranking completed in {processing_time:.3f}s")
             return scores_list
 
         except Exception as e:
-            processing_time = time.time() - start_time
-            logger.error(f"MLX reranking failed after {processing_time:.3f}s: {str(e)}")
-            # Fallback to simple similarity
+            logger.error(f"Reranking failed: {str(e)}")
             return await self._fallback_rerank(query, passages)
 
     async def _fallback_rerank(self, query: str, passages: List[str]) -> List[float]:
-        """Fallback reranking using simple text similarity."""
-        logger.warning("Using fallback reranking method")
-        scores = []
-
-        # Simple word overlap scoring as fallback
+        """Fallback reranking using word overlap (Jaccard similarity)."""
+        logger.warning("Using fallback Jaccard similarity reranking")
         query_words = set(query.lower().split())
-
+        scores = []
         for passage in passages:
             passage_words = set(passage.lower().split())
             overlap = len(query_words.intersection(passage_words))
-            total_words = len(query_words.union(passage_words))
-            score = overlap / max(total_words, 1)  # Jaccard similarity
-            scores.append(float(score))
-
+            total = len(query_words.union(passage_words))
+            scores.append(overlap / max(total, 1))
         return scores
 
     def __del__(self):
