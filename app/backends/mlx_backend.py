@@ -19,7 +19,7 @@ Supported models:
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -276,6 +276,86 @@ class MLXBackend(BaseBackend):
         norm = mx.linalg.norm(embeddings, axis=-1, keepdims=True)
         return embeddings / mx.maximum(norm, 1e-9)
 
+    def _tokenize_texts(self, texts: List[str], max_length: int = 512) -> Dict[str, np.ndarray]:
+        """
+        Tokenize texts handling both HuggingFace tokenizers and mlx-lm TokenizerWrapper.
+
+        The mlx-lm TokenizerWrapper doesn't implement __call__, so we need to either:
+        1. Access the underlying HF tokenizer via _tokenizer attribute
+        2. Fall back to manual tokenization using encode()
+
+        Args:
+            texts: List of texts to tokenize
+            max_length: Maximum sequence length
+
+        Returns:
+            Dict with 'input_ids' and 'attention_mask' as numpy arrays
+        """
+        # Strategy 1: Try accessing underlying HuggingFace tokenizer
+        if hasattr(self.tokenizer, '_tokenizer'):
+            try:
+                hf_tokenizer = self.tokenizer._tokenizer
+                encodings = hf_tokenizer(
+                    texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors='np',
+                )
+                return {
+                    'input_ids': encodings['input_ids'],
+                    'attention_mask': encodings['attention_mask'],
+                }
+            except Exception as e:
+                logger.warning(f"HF tokenizer call failed: {e}, trying encode method")
+
+        # Strategy 2: Try direct __call__ (for native HF tokenizers)
+        if callable(self.tokenizer):
+            try:
+                encodings = self.tokenizer(
+                    texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors='np',
+                )
+                return {
+                    'input_ids': encodings['input_ids'],
+                    'attention_mask': encodings.get('attention_mask', np.ones_like(encodings['input_ids'])),
+                }
+            except TypeError:
+                pass  # Not callable, try next strategy
+
+        # Strategy 3: Manual tokenization using encode() method
+        logger.info("Using manual tokenization with encode() method")
+        all_ids = []
+        for text in texts:
+            # mlx-lm tokenizer.encode() returns list of ints
+            ids = self.tokenizer.encode(text)
+            # Truncate to max_length
+            ids = ids[:max_length]
+            all_ids.append(ids)
+
+        # Pad to max length in batch
+        max_len = max(len(ids) for ids in all_ids) if all_ids else 1
+        padded_ids = []
+        attention_masks = []
+
+        # Get pad token id (default to 0 if not available)
+        pad_token_id = getattr(self.tokenizer, 'pad_token_id', None)
+        if pad_token_id is None:
+            pad_token_id = getattr(self.tokenizer, 'eos_token_id', 0) or 0
+
+        for ids in all_ids:
+            pad_len = max_len - len(ids)
+            padded_ids.append(ids + [pad_token_id] * pad_len)
+            attention_masks.append([1] * len(ids) + [0] * pad_len)
+
+        return {
+            'input_ids': np.array(padded_ids, dtype=np.int64),
+            'attention_mask': np.array(attention_masks, dtype=np.int64),
+        }
+
     async def embed_texts(self, texts: List[str], batch_size: int = 32) -> EmbeddingResult:
         """
         Generate embeddings using full transformer forward pass.
@@ -338,21 +418,11 @@ class MLXBackend(BaseBackend):
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i + batch_size]
 
-            # Tokenize batch
-            encodings = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=512,
-                return_tensors='np',
-            )
+            # Tokenize batch using our compatible tokenization method
+            encodings = self._tokenize_texts(batch_texts, max_length=512)
 
             input_ids = _mx_array(encodings['input_ids'])
-
-            # Get attention mask if available (for proper mean pooling)
-            attention_mask = None
-            if 'attention_mask' in encodings:
-                attention_mask = _mx_array(encodings['attention_mask'])
+            attention_mask = _mx_array(encodings['attention_mask'])
 
             # Run full transformer forward pass
             hidden_states = self._get_hidden_states(input_ids, attention_mask)
