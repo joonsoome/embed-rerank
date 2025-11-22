@@ -208,6 +208,36 @@ class MLXCrossEncoderBackend(BaseBackend):
                 hidden_size=self._hidden_size,
             )
 
+            # Log full model structure for debugging dimension mismatches
+            logger.info("=== Model Structure Debug ===")
+            for name, module in [("model", model), ("inner_model", inner_model)]:
+                logger.info(f"{name} attributes: {[a for a in dir(module) if not a.startswith('_')]}")
+
+            # Check for lm_head and any projection layers
+            if hasattr(model, 'lm_head'):
+                lm_head = model.lm_head
+                if hasattr(lm_head, 'weight'):
+                    logger.info(f"lm_head.weight shape: {lm_head.weight.shape}")
+                if hasattr(lm_head, 'scales'):
+                    logger.info(f"lm_head.scales shape: {lm_head.scales.shape}")
+                if hasattr(lm_head, 'biases'):
+                    logger.info(f"lm_head.biases: {lm_head.biases}")
+
+            # Check for output projection layers that might exist between hidden states and lm_head
+            for proj_name in ['output_projection', 'out_proj', 'dense', 'proj', 'head_proj']:
+                if hasattr(model, proj_name):
+                    proj = getattr(model, proj_name)
+                    logger.info(f"Found {proj_name}: {type(proj)}")
+                    if hasattr(proj, 'weight'):
+                        logger.info(f"  {proj_name}.weight shape: {proj.weight.shape}")
+                if hasattr(inner_model, proj_name):
+                    proj = getattr(inner_model, proj_name)
+                    logger.info(f"Found inner_model.{proj_name}: {type(proj)}")
+                    if hasattr(proj, 'weight'):
+                        logger.info(f"  {proj_name}.weight shape: {proj.weight.shape}")
+
+            logger.info("=== End Model Structure Debug ===")
+
             return model, tokenizer, config
 
         except Exception as e:
