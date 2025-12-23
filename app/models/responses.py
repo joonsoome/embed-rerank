@@ -39,7 +39,8 @@ class EmbedResponse(BaseModel):
     """Response model for embedding generation."""
 
     model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}, protected_namespaces=()  # Allow model_ fields
+        json_encoders={datetime: lambda v: v.isoformat()},
+        protected_namespaces=(),  # Allow model_ fields
     )
 
     # Enhanced structure with both new format and backward compatibility
@@ -74,9 +75,7 @@ class RerankResult(BaseModel):
     )
     score: float = Field(
         ...,
-        description="Relevance score (higher is more relevant, can be negative for similarity methods)",
-        ge=-1.0,
-        le=1.0,
+        description="Relevance score (higher is more relevant, raw logits from model or normalized based on client request)",
         json_schema_extra={"example": 0.8542},
     )
     index: int = Field(..., description="Original index in input list", ge=0, json_schema_extra={"example": 0})
@@ -86,7 +85,8 @@ class RerankResponse(BaseModel):
     """Response model for document reranking."""
 
     model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}, protected_namespaces=()  # Allow model_ fields
+        json_encoders={datetime: lambda v: v.isoformat()},
+        protected_namespaces=(),  # Allow model_ fields
     )
 
     results: List[RerankResult] = Field(
