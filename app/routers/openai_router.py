@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..backends.base import BackendManager
+from ..config import settings as app_settings
 from ..models.requests import EmbedRequest, RerankRequest
 from ..models.responses import EmbedResponse
 from ..services.reranking_service import RerankingService
@@ -345,7 +346,12 @@ async def create_embeddings(
         )
 
         # 🔄 Convert enhanced OpenAI request to internal MLX format
-        internal_request = EmbedRequest(texts=texts, normalize=normalize, batch_size=batch_size)
+        internal_request = EmbedRequest(
+            texts=texts,
+            normalize=normalize,
+            batch_size=batch_size,
+            max_tokens_override=max_tokens,
+        )
 
         # ⚡ Generate embeddings using Apple MLX magic with enhanced config!
         # Use the global embedding service with dynamic configuration
@@ -359,7 +365,7 @@ async def create_embeddings(
 
         # 🔄 Optionally adjust dimensions if requested
         vectors: List[List[float]] = mlx_result.vectors
-        target_dims = request.dimensions
+        target_dims = request.dimensions if app_settings.embedding_send_dim else None
         if target_dims is not None and target_dims > 0:
             adjusted: List[List[float]] = []
             for v in vectors:

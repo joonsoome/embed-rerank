@@ -103,10 +103,36 @@ class Settings(BaseSettings):
         default="smart_truncate", description="Default truncation strategy"
     )
     default_max_tokens_override: Optional[int] = Field(
-        default=None, description="Default max tokens override (None = use model default)"
+        default=None,
+        description="Default max tokens override (None = use model default)",
+        validation_alias=AliasChoices(
+            "EMBEDDING_TOKEN_LIMIT",  # LightRAG parity
+            "DEFAULT_MAX_TOKENS_OVERRIDE",
+            "default_max_tokens_override",
+        ),
     )
     default_return_processing_info: bool = Field(
         default=False, description="Default setting for returning processing information"
+    )
+
+    # LightRAG parity: gate whether to honor OpenAI-compatible `dimensions` request field
+    embedding_send_dim: bool = Field(
+        default=True,
+        description="Whether to honor OpenAI-compatible `dimensions` field in /v1/embeddings",
+        validation_alias=AliasChoices("EMBEDDING_SEND_DIM", "embedding_send_dim"),
+    )
+
+    # LightRAG parity: Cohere rerank chunking configuration
+    rerank_enable_chunking: bool = Field(
+        default=False,
+        description="Enable document chunking for Cohere-compatible rerank endpoints (/v1|/v2/rerank)",
+        validation_alias=AliasChoices("RERANK_ENABLE_CHUNKING", "rerank_enable_chunking"),
+    )
+    rerank_max_tokens_per_doc: int = Field(
+        default=4096,
+        ge=1,
+        description="Max tokens per document when rerank chunking is enabled (approximate, 1 token ~= 4 chars)",
+        validation_alias=AliasChoices("RERANK_MAX_TOKENS_PER_DOC", "rerank_max_tokens_per_doc"),
     )
 
     # Logging
@@ -164,6 +190,14 @@ class Settings(BaseSettings):
         """Treat empty-string values for optional int fields as None to avoid validation errors."""
         if isinstance(v, str) and v.strip() == "":
             return None
+        return v
+
+    @field_validator("rerank_max_tokens_per_doc", mode="before")
+    @classmethod
+    def empty_string_rerank_max_tokens_to_default(cls, v):
+        """Treat empty-string values for rerank_max_tokens_per_doc as unset (use default)."""
+        if isinstance(v, str) and v.strip() == "":
+            return 4096
         return v
 
     @field_validator("batch_size", "max_batch_size")

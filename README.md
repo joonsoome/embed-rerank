@@ -111,10 +111,17 @@ curl -s http://localhost:9000/api/v1/rerank/ \
 
 ```bash
 cat >> .env <<'ENV'
+# Torch cross-encoder (stable)
 RERANKER_BACKEND=auto
-RERANKER_MODEL_ID=cross-encoder/ms-marco-MiniLM-L-6-v2  # Torch (stable)
-# MLX experimental v1 also available: vserifsaglam/Qwen3-Reranker-4B-4bit-MLX
+RERANKER_MODEL_ID=cross-encoder/ms-marco-MiniLM-L-6-v2
+
+# MLX reranker (Apple Silicon). Required for MLX models:
+# RERANKER_BACKEND=mlx
+# RERANKER_MODEL_NAME=vserifsaglam/Qwen3-Reranker-4B-4bit-MLX
 ENV
+
+# Optional: pre-download the MLX reranker to the default HF cache
+# ./download-rerank-model.sh
 
 # Restart server, then call Native or OpenAI-compatible rerank
 curl -s http://localhost:9000/api/v1/rerank/ \
@@ -137,6 +144,7 @@ Notes
 - OpenAI drop-in supported for both embeddings and rerank (/v1/embeddings, /v1/rerank). See docs for a tiny SDK example.
 - Scores may be auto‑sigmoid‑normalized for OpenAI clients by default (disable via `OPENAI_RERANK_AUTO_SIGMOID=false`).
 - The root endpoint `/` shows both `embedding_dimension` (served) and `hidden_size` (model config) for clarity.
+- Reranker backend `auto` defaults to Torch for compatibility; MLX reranker models require `RERANKER_BACKEND=mlx`.
 
 Run the full validation suite
 ```bash
@@ -186,6 +194,12 @@ print(rr.get("results", rr))
 | ✅ | [**continue.dev**](https://www.continue.dev) | `Embed` `Rerank` |
 | ✅ | [**Kilo Code**](https://kilocode.ai/) | `Embed` |
 ###### We are waiting for your reports!
+
+### LightRAG Option Parity
+- `EMBEDDING_SEND_DIM`: gate honoring OpenAI-compatible `dimensions` in `/v1/embeddings`
+- `EMBEDDING_TOKEN_LIMIT`: alias for `DEFAULT_MAX_TOKENS_OVERRIDE` (default per-text token budget)
+- `RERANK_ENABLE_CHUNKING`, `RERANK_MAX_TOKENS_PER_DOC`: Cohere-compatible rerank document chunking
+- When unset, defaults remain unchanged.
 
 ## 📄 License
 

@@ -72,7 +72,36 @@ curl -X POST "http://localhost:9000/embed" \
   -d '{"inputs": ["test"]}'
 ```
 
-### 2. API 호환성 테스트 실패
+### 2. MLX reranker 로딩 실패 (quant_method 오류)
+
+**문제 증상 (로그 예시):**
+```
+Failed to load CrossEncoder model 'vserifsaglam/Qwen3-Reranker-4B-4bit-MLX':
+The model's quantization config ... has no `quant_method` attribute
+```
+
+**원인:**
+- `RERANKER_BACKEND=auto`는 **reranker에서 Torch를 기본 선택**합니다.
+- MLX 전용 모델(`...-MLX`)을 Torch CrossEncoder로 로딩하면 실패합니다.
+
+**해결 방법:**
+1. **MLX reranker 사용 (Apple Silicon):**
+```bash
+# .env
+RERANKER_BACKEND=mlx
+RERANKER_MODEL_NAME=vserifsaglam/Qwen3-Reranker-4B-4bit-MLX
+
+# (선택) 기본 HF 캐시에 미리 다운로드
+./download-rerank-model.sh
+```
+2. **Torch reranker 유지:**
+```bash
+RERANKER_BACKEND=torch
+RERANKER_MODEL_ID=cross-encoder/ms-marco-MiniLM-L-6-v2
+```
+3. **서비스 재시작 후 /health 또는 /api/v1/rerank 확인**
+
+### 3. API 호환성 테스트 실패
 
 **문제 증상:**
 ```bash
@@ -107,7 +136,7 @@ curl http://localhost:9000/health/
 tail -f server.log  # 백그라운드 서버인 경우
 ```
 
-### 3. 포트 충돌 문제
+### 4. 포트 충돌 문제
 
 **문제 증상:**
 ```
@@ -137,7 +166,7 @@ embed-rerank --port 8080
 python -m uvicorn app.main:app --port 8080
 ```
 
-### 4. 모델 로딩 실패
+### 5. 모델 로딩 실패
 
 **문제 증상:**
 ```
@@ -165,7 +194,7 @@ tokenizer = AutoTokenizer.from_pretrained("mlx-community/Qwen3-Embedding-4B-4bit
 4. **디스크 공간 확인:**
 모델은 약 2.3GB의 공간이 필요합니다.
 
-### 5. Apple Silicon이 아닌 환경
+### 6. Apple Silicon이 아닌 환경
 
 **문제 증상:**
 ```
@@ -187,7 +216,7 @@ curl http://localhost:9000/health/
 - Intel Mac (PyTorch MPS): 10-50ms  
 - Other (PyTorch CPU): 100-500ms
 
-### 6. 가상환경 문제
+### 7. 가상환경 문제
 
 **문제 증상:**
 ```

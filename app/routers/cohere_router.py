@@ -11,10 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..backends.base import BackendManager
+from ..config import settings
 from ..models.cohere_models import CohereRerankRequest, CohereRerankResponse, CohereRerankResult, CohereDocument
 from ..models.requests import RerankRequest
 from ..models.responses import ErrorResponse
 from ..services.reranking_service import RerankingService
+from ..utils.rerank_chunking import aggregate_scores, chunk_documents
 
 
 router = APIRouter(
@@ -43,12 +45,19 @@ def _filter_none_values(data):
 
 # This will be set by the main app
 _backend_manager: BackendManager = None
+_reranker_backend_manager: BackendManager = None
 
 
 def set_backend_manager(manager: BackendManager):
     """Set the backend manager instance."""
     global _backend_manager
     _backend_manager = manager
+
+
+def set_reranker_backend_manager(manager: BackendManager):
+    """Set a dedicated reranker backend manager (cross-encoder) for Cohere-compatible endpoints."""
+    global _reranker_backend_manager
+    _reranker_backend_manager = manager
 
 
 async def get_backend_manager() -> BackendManager:
@@ -60,6 +69,9 @@ async def get_backend_manager() -> BackendManager:
 
 async def get_reranking_service(manager: BackendManager = Depends(get_backend_manager)) -> RerankingService:
     """Dependency to get the reranking service."""
+    # Prefer dedicated reranker backend if configured and ready
+    if _reranker_backend_manager is not None and _reranker_backend_manager.is_ready():
+        return RerankingService(_reranker_backend_manager)
     if not manager.is_ready():
         raise HTTPException(status_code=503, detail="Backend not ready. Please wait for model initialization.")
     return RerankingService(manager)
@@ -120,6 +132,48 @@ async def rerank_v1(request: CohereRerankRequest, service: RerankingService = De
     while gaining significant performance improvements on Apple Silicon.
     """
     try:
+        # Optional document chunking (LightRAG parity) for models with strict token limits.
+        if settings.rerank_enable_chunking:
+            original_docs = request.documents
+            chunked_docs, doc_indices = chunk_documents(
+                original_docs,
+                max_tokens=int(settings.rerank_max_tokens_per_doc),
+            )
+
+            # Guardrail: never exceed the server's configured passage limit.
+            if len(chunked_docs) > settings.max_passages_per_rerank:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Chunking produced {len(chunked_docs)} chunks which exceeds "
+                        f"MAX_PASSAGES_PER_RERANK={settings.max_passages_per_rerank}. "
+                        f"Reduce RERANK_MAX_TOKENS_PER_DOC or increase MAX_PASSAGES_PER_RERANK."
+                    ),
+                )
+
+            scores = await service.compute_relevance_scores(query=request.query, passages=chunked_docs)
+            aggregated = aggregate_scores(
+                scores=scores,
+                doc_indices=doc_indices,
+                num_docs=len(original_docs),
+                aggregation="max",
+            )
+
+            # Apply top_n at document level (post-aggregation).
+            top_n = request.top_n if request.top_n is not None else len(original_docs)
+            top_n = min(int(top_n), len(aggregated))
+
+            results: List[CohereRerankResult] = []
+            for doc_idx, score in aggregated[:top_n]:
+                item = CohereRerankResult(index=int(doc_idx), relevance_score=float(score))
+                if request.return_documents:
+                    item.document = CohereDocument(text=original_docs[int(doc_idx)])
+                results.append(item)
+
+            cohere_response = CohereRerankResponse(results=results)
+            payload = _filter_none_values(cohere_response.model_dump())
+            return JSONResponse(content=payload)
+
         # Convert Cohere request to internal format
         internal_request = convert_to_internal_request(request)
 
@@ -134,6 +188,8 @@ async def rerank_v1(request: CohereRerankRequest, service: RerankingService = De
 
         return JSONResponse(content=payload)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
     except RuntimeError as e:
