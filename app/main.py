@@ -115,6 +115,11 @@ async def lifespan(app: FastAPI):
                 health_router.set_reranker_backend_manager(reranker_backend_manager)
                 # Expose reranker in OpenAI compatibility router
                 openai_router.set_reranker_backend_manager(reranker_backend_manager)
+                # Expose reranker in Cohere compatibility router
+                try:
+                    cohere_router.set_reranker_backend_manager(reranker_backend_manager)
+                except Exception:
+                    pass
                 logger.info(
                     "✅ Reranker backend ready",
                     backend=rerank_backend.__class__.__name__,

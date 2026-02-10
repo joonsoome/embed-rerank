@@ -158,29 +158,42 @@ class EmbeddingService:
             recommended_max_tokens = 2048
             absolute_max_tokens = 8192
 
-        # 사용자 오버라이드 적용
+        # Apply token limit override with explicit priority:
+        # 1) per-request override
+        # 2) env-configured default override (LightRAG parity: EMBEDDING_TOKEN_LIMIT)
+        # 3) model metadata recommended limit
         max_tokens = recommended_max_tokens
-        if request.max_tokens_override:
-            if request.max_tokens_override > absolute_max_tokens:
+
+        override = request.max_tokens_override
+        override_source = "request"
+        if override is None:
+            override = getattr(self.config, "default_max_tokens_override", None)
+            override_source = "settings"
+
+        # Treat non-positive overrides as disabled/unset.
+        if override is not None and int(override) <= 0:
+            override = None
+
+        if override is not None:
+            override_int = int(override)
+            if override_int > absolute_max_tokens:
                 logger.warning(
-                    f"⚠️  max_tokens_override ({request.max_tokens_override}) exceeds absolute limit "
-                    f"({absolute_max_tokens}), using absolute limit"
+                    f"⚠️  max_tokens_override ({override_int}) exceeds absolute limit "
+                    f"({absolute_max_tokens}), clamping to absolute limit"
                 )
                 max_tokens = absolute_max_tokens
             else:
-                max_tokens = request.max_tokens_override
-                logger.info(
-                    f"🔧 Using user-specified max_tokens_override: {max_tokens} "
-                    f"(recommended: {recommended_max_tokens})"
-                )
-
-        # 사용자 오버라이드가 절대 한도를 초과하는 경우 오류 발생
-        if request.max_tokens_override and request.max_tokens_override > absolute_max_tokens:
-            raise ValueError(
-                f"max_tokens_override ({request.max_tokens_override}) exceeds absolute maximum "
-                f"({absolute_max_tokens}) for model {model_name}"
-            )
-            max_tokens = absolute_max_tokens
+                max_tokens = override_int
+                if override_source == "request":
+                    logger.info(
+                        f"🔧 Using user-specified max_tokens_override: {max_tokens} "
+                        f"(recommended: {recommended_max_tokens})"
+                    )
+                else:
+                    logger.info(
+                        f"🔧 Using default max_tokens_override from settings: {max_tokens} "
+                        f"(recommended: {recommended_max_tokens})"
+                    )
 
         try:
             # 🚀 개선된 텍스트 처리 엔진 사용 (설정 기본값 적용)

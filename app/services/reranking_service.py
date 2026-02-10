@@ -102,6 +102,23 @@ class RerankingService:
 
             raise RuntimeError(error_msg) from e
 
+    async def compute_relevance_scores(self, query: str, passages: List[str]) -> List[float]:
+        """Compute raw relevance scores aligned to the input passages.
+
+        This is useful for advanced routing (e.g. rerank chunking/aggregation) where the
+        caller needs scores for *all* inputs and wants to apply its own top-k semantics.
+        """
+        # Mirror rerank_passages() behavior: treat backend readiness issues as service errors.
+        if not self.backend_manager.is_available():
+            raise RuntimeError("No backend available for reranking")
+
+        try:
+            return await self._compute_relevance_scores(query=query, passages=passages)
+        except ValueError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Failed to compute relevance scores: {str(e)}") from e
+
     async def _compute_relevance_scores(self, query: str, passages: List[str]) -> List[float]:
         """
         Compute relevance scores for query-passage pairs.

@@ -195,6 +195,12 @@ print(rr.get("results", rr))
 | ✅ | [**Kilo Code**](https://kilocode.ai/) | `Embed` |
 ###### We are waiting for your reports!
 
+### LightRAG Option Parity
+- `EMBEDDING_SEND_DIM`: gate honoring OpenAI-compatible `dimensions` in `/v1/embeddings`
+- `EMBEDDING_TOKEN_LIMIT`: alias for `DEFAULT_MAX_TOKENS_OVERRIDE` (default per-text token budget)
+- `RERANK_ENABLE_CHUNKING`, `RERANK_MAX_TOKENS_PER_DOC`: Cohere-compatible rerank document chunking
+- When unset, defaults remain unchanged.
+
 ## 📄 License
 
 MIT License – build amazing things locally.
