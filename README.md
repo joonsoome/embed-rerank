@@ -193,6 +193,8 @@ print(rr.get("results", rr))
 | ✅ | [**LightRAG**](https://github.com/HKUDS/LightRAG) | `Embed` `Rerank` |
 | ✅ | [**continue.dev**](https://www.continue.dev) | `Embed` `Rerank` |
 | ✅ | [**Kilo Code**](https://kilocode.ai/) | `Embed` |
+| ✅ | [**LiteLLM**](https://www.litellm.ai/) | `Embed` `Rerank` |
+| ✅ | [**RisuAI**](https://risuai.net/) | `Embed` |
 ###### We are waiting for your reports!
 
 ### LightRAG Option Parity
